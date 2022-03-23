@@ -44,10 +44,8 @@ class BiModalVAEIT(tf.keras.Model):
     @tf.function
     def get_latent(self, inputs, masks, training=False):
         batch_size = inputs.shape[0]
-
-        # (batch_size, 2*dim_input)
-        observed_inputs = self.make_observed_inputs(inputs, masks)
-        observed_inputs_with_masks = tf.concat([observed_inputs, masks], axis=-1)
+        
+        observed_inputs_with_masks = tf.concat([inputs, tf.zeros_like(inputs)], axis=-1)
         prior_params = self.prior_net(observed_inputs_with_masks, training=training)
 
         # (batch_size, dim_latent)
@@ -61,6 +59,23 @@ class BiModalVAEIT(tf.keras.Model):
 
         # (batch_size, dim_latent)
         latent = prior_distribution.sample()
+        
+        # (batch_size, 2*dim_input)
+        observed_inputs = self.make_observed_inputs(inputs, masks)
+        observed_inputs_with_masks = tf.concat([observed_inputs, masks], axis=-1)
+        prior_params = self.prior_net(observed_inputs_with_masks, training=training)
+
+        # (batch_size, dim_latent)
+        prior_distribution_1 = tfd.Normal(
+            loc=prior_params[..., :self.config.dim_latent],
+            scale=tf.clip_by_value(
+            tf.nn.softplus(prior_params[..., self.config.dim_latent:]),
+            1e-3,
+            tf.float32.max),
+            name="priors")
+
+        # (batch_size, dim_latent)
+        latent_1 = prior_distribution_1.sample()
         
         
         # (batch_size, 2*dim_input)
@@ -82,14 +97,15 @@ class BiModalVAEIT(tf.keras.Model):
         
         # (batch_size, )
         divergence = tf.reduce_sum(
-            tfd.kl_divergence(prior_distribution_2, prior_distribution), -1
+            tfd.kl_divergence(prior_distribution_1, prior_distribution), -1
         ) + tf.reduce_sum(
-                tfd.kl_divergence(prior_distribution, prior_distribution_2), -1)
+                tfd.kl_divergence(prior_distribution_2, prior_distribution), -1)
         
         out = tf.nn.sigmoid(self.generative_net(latent, training=training))
+        out_1 = tf.nn.sigmoid(self.generative_net(latent_1, training=training))
         out_2 = tf.nn.sigmoid(self.generative_net(latent_2, training=training))
-                
-        return out, out_2, -tf.reduce_mean(divergence)
+        
+        return out, out_1, out_2, -tf.reduce_mean(divergence)
     
     
     @tf.function
@@ -140,7 +156,7 @@ class BiModalVAEIT(tf.keras.Model):
         :return:
         """
         
-        out, out_2, neg_kl = self.get_latent(inputs, masks, training)
+        out, out_1, out_2, neg_kl = self.get_latent(inputs, masks, training)
         
         disp_rna = tfp.math.clip_by_value_preserve_gradient(
             tf.nn.softplus(
@@ -152,21 +168,20 @@ class BiModalVAEIT(tf.keras.Model):
         
         probs = self.get_probs(inputs, out,
                                disp_rna, disp_adt, training)
+        likelihood_observed_rna = tf.reduce_sum(probs[..., :self.config.dim_input_rna], -1)
+        likelihood_observed_adt = tf.reduce_sum(probs[..., self.config.dim_input_rna:], -1)
+        
+        probs = self.get_probs(inputs, out_1, 
+                               disp_rna, disp_adt, training)
         likelihood_unobserved = tf.multiply(probs, masks)
-        likelihood_observed = tf.multiply(probs, 1-masks)
         likelihood_unobserved_rna = tf.reduce_sum(likelihood_unobserved[..., :self.config.dim_input_rna], -1)
-        likelihood_observed_rna = tf.reduce_sum(likelihood_observed[..., :self.config.dim_input_rna], -1)
         likelihood_unobserved_adt = tf.reduce_sum(likelihood_unobserved[..., self.config.dim_input_rna:], -1)
-        likelihood_observed_adt = tf.reduce_sum(likelihood_observed[..., self.config.dim_input_rna:], -1)
         
         probs = self.get_probs(inputs, out_2, 
                                disp_rna, disp_adt, training)
         likelihood_unobserved = tf.multiply(probs, 1 - masks)
-        likelihood_observed = tf.multiply(probs, masks)
         likelihood_unobserved_rna += tf.reduce_sum(likelihood_unobserved[..., :self.config.dim_input_rna], -1)
-        likelihood_observed_rna += tf.reduce_sum(likelihood_observed[..., :self.config.dim_input_rna], -1)
         likelihood_unobserved_adt += tf.reduce_sum(likelihood_unobserved[..., self.config.dim_input_rna:], -1)
-        likelihood_observed_adt += tf.reduce_sum(likelihood_observed[..., self.config.dim_input_rna:], -1)
 
         '''
         tf.print(
