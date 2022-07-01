@@ -1,2 +1,2 @@
 # scVAEIT
-Variational autoencoder for single-cell imputation and transfer learning.
+Variational autoencoder for single-cell integration and transfer learning.
