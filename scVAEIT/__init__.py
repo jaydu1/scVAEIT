@@ -1,7 +1,6 @@
 __all__ = ['scVAEIT']
 
-from scVAEIT.model import BiModalVAEIT
-from scVAEIT.utils import Early_Stopping
+from scVAEIT.model import VariationalAutoEncoder
 
 __author__ = "Jin-Hong Du"
 __copyright__ = "Copyright 2022, The Cross-Modalilty Transfer Learning Project"

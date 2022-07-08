@@ -3,264 +3,241 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 tfd = tfp.distributions
 
-from scVAEIT.utils import BiModalMaskGenerator, BiModalandFixMaskGenerator
-from scVAEIT.nn_utils import prior_network, proposal_network, generative_network
-from tensorflow.keras.layers import Dense
+from scVAEIT.utils import ModalMaskGenerator
+from scVAEIT.nn_utils import Encoder, Decoder, LatentSpace
+from tensorflow.keras.layers import Layer, Dense, BatchNormalization
+from tensorflow.keras.utils import Progbar
 
-
-
-
-class BiModalVAEIT(tf.keras.Model):
-    def __init__(self, config, fixed_masks=None):
-        super(BiModalVAEIT, self).__init__()
+            
+            
+class VariationalAutoEncoder(tf.keras.Model):
+    """
+    Combines the encoder, decoder and LatentSpace into an end-to-end model for training and inference.
+    """
+    def __init__(self, config, masks, name = 'autoencoder', **kwargs):
+        '''
+        Parameters
+        ----------
+        dimensions : np.array
+            The dimensions of hidden layers of the encoder.
+        dim_latent : int
+            The latent dimension of the encoder.
+        
+        dim_block : list of int
+            (num_block,) The dimension of each input block.        
+        dist_block : list of str
+            (num_block,) `'NB'`, `'ZINB'`, `'Bernoulli'` or `'Gaussian'`.
+        dim_block_enc : list of int
+            (num_block,) The dimension of output of first layer of the encoder for each block.
+        dim_block_dec : list of int
+            (num_block,) The dimension of output of last layer of the decoder for each block.        
+        block_names : list of str, optional
+            (num_block,) The name of first layer for each block.
+        name : str, optional
+            The name of the layer.
+        **kwargs : 
+            Extra keyword arguments.
+        '''
+        super(VariationalAutoEncoder, self).__init__(name = name, **kwargs)
         self.config = config
-
-        self.prior_net = prior_network(2*config.dim_latent)
-        if self.config.rna_dist=='NB':
-            self.generative_net = generative_network(config.dim_input,)
-        else:
-            self.generative_net = generative_network(config.dim_input + config.dim_input_rna,)
-        self.mask_generator = BiModalandFixMaskGenerator(
-            fixed_masks, config.dim_input_rna, config.dim_input_adt, config.p_feat, config.p_modal)
-        # dispersion parameter
-        self.log_r_rna = tf.Variable(
-            tf.zeros([1, config.dim_input_rna], dtype=tf.keras.backend.floatx()), name = "log_r_rna")
-        self.log_r_adt = tf.Variable(
-            tf.zeros([1, config.dim_input_adt], dtype=tf.keras.backend.floatx()), name = "log_r_adt")
-
-    def generate_mask(self, inputs, p=None):
-        return self.mask_generator(inputs, p)
-
-    @staticmethod
-    def make_observed_inputs(inputs, masks):
-        """
-        compute x_observed
-        :param inputs:
-        :param masks:
-        :return:
-        """
-        return tf.where(tf.cast(masks, tf.bool), tf.zeros_like(inputs), inputs)
-
-    @tf.function
-    def get_latent(self, inputs, masks, training=False):
-        batch_size = inputs.shape[0]
+        self.masks = masks
+        self.embed_layer = Dense(np.sum(self.config.dim_block_embed), 
+                                 activation = tf.nn.tanh, name = 'embed')
+        self.encoder = Encoder(self.config.dimensions, self.config.dim_latent,
+            self.config.dim_block, self.config.dim_block_enc, self.config.dim_block_embed, self.config.block_names)
+        self.decoder = Decoder(self.config.dimensions[::-1], self.config.dim_block,
+            self.config.dist_block, self.config.dim_block_dec, self.config.dim_block_embed, self.config.block_names)
         
-        observed_inputs_with_masks = tf.concat([inputs, tf.zeros_like(inputs)], axis=-1)
-        prior_params = self.prior_net(observed_inputs_with_masks, training=training)
-
-        # (batch_size, dim_latent)
-        prior_distribution = tfd.Normal(
-            loc=prior_params[..., :self.config.dim_latent],
-            scale=tf.clip_by_value(
-            tf.nn.softplus(prior_params[..., self.config.dim_latent:]),
-            1e-3,
-            tf.float32.max),
-            name="priors")
-
-        # (batch_size, dim_latent)
-        latent = prior_distribution.sample()
-        
-        # (batch_size, 2*dim_input)
-        observed_inputs = self.make_observed_inputs(inputs, masks)
-        observed_inputs_with_masks = tf.concat([observed_inputs, masks], axis=-1)
-        prior_params = self.prior_net(observed_inputs_with_masks, training=training)
-
-        # (batch_size, dim_latent)
-        prior_distribution_1 = tfd.Normal(
-            loc=prior_params[..., :self.config.dim_latent],
-            scale=tf.clip_by_value(
-            tf.nn.softplus(prior_params[..., self.config.dim_latent:]),
-            1e-3,
-            tf.float32.max),
-            name="priors")
-
-        # (batch_size, dim_latent)
-        latent_1 = prior_distribution_1.sample()
+        self.mask_generator = ModalMaskGenerator(
+            config.dim_input_arr, config.p_feat, config.p_modal)
         
         
-        # (batch_size, 2*dim_input)
-        observed_inputs = self.make_observed_inputs(inputs, 1-masks)
-        observed_inputs_with_masks = tf.concat([observed_inputs, 1-masks], axis=-1)
-        prior_params = self.prior_net(observed_inputs_with_masks, training=training)
+    def generate_mask(self, inputs, mask=None, p=None):
+        return self.mask_generator(inputs, mask, p)
+        
+        
+    def init_latent_space(self, n_clusters, mu, log_pi=None):
+        '''Initialze the latent space.
 
-        # (batch_size, dim_latent)
-        prior_distribution_2 = tfd.Normal(
-            loc=prior_params[..., :self.config.dim_latent],
-            scale=tf.clip_by_value(
-            tf.nn.softplus(prior_params[..., self.config.dim_latent:]),
-            1e-3,
-            tf.float32.max),
-            name="priors_2")
+        Parameters
+        ----------
+        n_clusters : int
+            The number of vertices in the latent space.
+        mu : np.array
+            \([d, k]\) The position matrix.
+        log_pi : np.array, optional
+            \([1, K]\) \(\\log\\pi\).
+        '''
+        self.n_states = n_clusters
+        self.latent_space = LatentSpace(self.n_states, self.config.dim_latent)
+        self.latent_space.initialize(mu, log_pi)
 
-        # (batch_size, dim_latent)
-        latent_2 = prior_distribution_2.sample()
-        
-        # (batch_size, )
-        divergence = tf.reduce_sum(
-            tfd.kl_divergence(prior_distribution_1, prior_distribution), -1
-        ) + tf.reduce_sum(
-                tfd.kl_divergence(prior_distribution_2, prior_distribution), -1)
-        
-        out = tf.nn.sigmoid(self.generative_net(latent, training=training))
-        out_1 = tf.nn.sigmoid(self.generative_net(latent_1, training=training))
-        out_2 = tf.nn.sigmoid(self.generative_net(latent_2, training=training))
-        
-        return out, out_1, out_2, -tf.reduce_mean(divergence)
-    
-    
-    @tf.function
-    def get_probs(self, inputs, out,
-                  disp_rna, disp_adt, training=False):
-        if self.config.rna_dist=='NB':
-            lambda_z = out * np.log(10**4+1)
-            generative_dist_rna = tfd.NegativeBinomial.experimental_from_mean_dispersion(
-                mean = lambda_z[..., :self.config.dim_input_rna], 
-                dispersion = disp_rna,
-                name='generative_RNA'
-            )
-        else:
-            phi_rna = tf.clip_by_value(out[..., self.config.dim_input:], 1e-5, 1.-1e-5)
-            lambda_z = out[..., :self.config.dim_input] * np.log(10**4+1)
-        
-            generative_dist_rna = tfd.Mixture(
-                cat=tfd.Categorical(
-                    probs=tf.stack([phi_rna, 1.0 - phi_rna], axis=-1)),
-                components=[tfd.Deterministic(loc=tf.zeros_like(phi_rna)), 
-                            tfd.NegativeBinomial.experimental_from_mean_dispersion(
-                                mean = lambda_z[..., :self.config.dim_input_rna], 
-                                dispersion = disp_rna
-                            )],
-                name='generative_RNA'
-            )
-        
+    def call(self, x, masks, batches,
+             pre_train = False, L=1, training=True
+             # alpha=0.0
+            ):
+        '''Feed forward through encoder, LatentSpace layer and decoder.
 
-        generative_dist_adt = tfd.NegativeBinomial.experimental_from_mean_dispersion(
-            mean = lambda_z[..., self.config.dim_input_rna:],
-            dispersion=disp_adt,
-            name='generative_ADT'
+        Parameters
+        ----------
+        x_normalized : np.array
+            \([B, G]\) The preprocessed data.
+        c_score : np.array
+            \([B, s]\) The covariates \(X_i\), only used when `has_cov=True`.
+        x : np.array, optional
+            \([B, G]\) The original count data \(Y_i\), only used when data_type is not `'Gaussian'`.
+        scale_factor : np.array, optional
+            \([B, ]\) The scale factors, only used when data_type is not `'Gaussian'`.
+        pre_train : boolean, optional
+            Whether in the pre-training phare or not.
+        L : int, optional
+            The number of MC samples.
+        alpha : float, optional
+            The penalty parameter for covariates adjustment.
+
+        Returns
+        ----------
+        losses : float
+            the loss.
+        '''
+        if not pre_train and not hasattr(self, 'latent_space'):
+            raise ReferenceError('Have not initialized the latent space.')
+                            
+        z_mean_obs, z_log_var_obs, z_obs, log_probs_obs = self._get_reconstruction_loss(
+            x, masks!=-1., masks!=-1., batches, L, training=training)
+        z_mean_unobs_1, z_log_var_unobs_1, z_unobs_1, log_probs_unobs = self._get_reconstruction_loss(
+            x, masks==0., masks==1., batches, L, training=training)
+        z_mean_unobs_2, z_log_var_unobs_2, z_unobs_2, log_probs_ = self._get_reconstruction_loss(
+            x, masks==1., masks==0., batches, L, training=training)
+        log_probs_unobs = (1-self.config.beta_reverse) * log_probs_unobs + self.config.beta_reverse*log_probs_
+
+#         if alpha>0.0:
+#             zero_in = tf.concat([tf.zeros([z.shape[0],1,z.shape[2]], dtype=tf.keras.backend.floatx()), 
+#                                 tf.tile(tf.expand_dims(c_score,1), (1,1,1))], -1)
+#             reconstruction_zero_loss = self._get_reconstruction_loss(x, zero_in, scale_factor, 1)
+#             reconstruction_z_loss = (1-alpha)*reconstruction_z_loss + alpha*reconstruction_zero_loss
+        
+        self.add_loss(
+            [- (1-self.config.beta_unobs) * 
+             tf.reduce_sum(tf.where(self.config.block_names==name, log_probs_obs, 0.)) * 
+             self.config.beta_modal[i] for i,name in enumerate(self.config.uni_block_names)]
+        )
+        self.add_loss(
+            [- self.config.beta_unobs * 
+             tf.reduce_sum(tf.where(self.config.block_names==name, log_probs_unobs, 0.)) * 
+             self.config.beta_modal[i] for i,name in enumerate(self.config.uni_block_names)]
         )
         
-        # (batch_size, )
-        probs = tf.concat(
-            [self.config.beta * generative_dist_rna.log_prob(inputs[..., :self.config.dim_input_rna]),
-            (1 - self.config.beta) * generative_dist_adt.log_prob(inputs[..., self.config.dim_input_rna:])], axis=-1
+        kl = (1-self.config.beta_reverse) * self._get_kl_normal(
+            z_mean_unobs_1, z_log_var_unobs_1, z_mean_obs, z_log_var_obs) + \
+            self.config.beta_reverse * self._get_kl_normal(
+            z_mean_unobs_2, z_log_var_unobs_2, z_mean_obs, z_log_var_obs)
+        self.add_loss(self.config.beta_kl * kl)
+        
+        if not pre_train:
+            log_p_z_obs, E_qzx_obs = self._get_kl_loss(z_obs, z_log_var_obs, training=training)
+            log_p_z_unobs_1, E_qzx_unobs_1 = self._get_kl_loss(z_unobs_1, z_log_var_unobs_1, training=training)
+            log_p_z_unobs_2, E_qzx_unobs_2 = self._get_kl_loss(z_unobs_2, z_log_var_unobs_2, training=training)
+                            
+            # - E_q[log p(z)]
+            self.add_loss(
+                -((1-self.config.beta_unobs) * log_p_z_obs + 
+                  self.config.beta_unobs * (
+                      (1-self.config.beta_reverse) * log_p_z_unobs_1 + 
+                      self.config.beta_reverse * log_p_z_unobs_2) )
             )
-        
-        return probs
-    
-        
-    def compute_loss(self, inputs, masks, training=False):
-        """
-        :param inputs: (batch_size, dim_input)
-        :param masks: (batch_size, dim_input)
-        :return:
-        """
-        
-        out, out_1, out_2, neg_kl = self.get_latent(inputs, masks, training)
-        
-        disp_rna = tfp.math.clip_by_value_preserve_gradient(
-            tf.nn.softplus(
-                self.log_r_rna), 0., 6.)
-        disp_adt = tfp.math.clip_by_value_preserve_gradient(
-            tf.nn.softplus(
-                self.log_r_adt), 0., 6.)
-        
-        
-        probs = self.get_probs(inputs, out,
-                               disp_rna, disp_adt, training)
-        likelihood_observed_rna = tf.reduce_sum(probs[..., :self.config.dim_input_rna], -1)
-        likelihood_observed_adt = tf.reduce_sum(probs[..., self.config.dim_input_rna:], -1)
-        
-        probs = self.get_probs(inputs, out_1, 
-                               disp_rna, disp_adt, training)
-        likelihood_unobserved = tf.multiply(probs, masks)
-        likelihood_unobserved_rna = tf.reduce_sum(likelihood_unobserved[..., :self.config.dim_input_rna], -1)
-        likelihood_unobserved_adt = tf.reduce_sum(likelihood_unobserved[..., self.config.dim_input_rna:], -1)
-        
-        probs = self.get_probs(inputs, out_2, 
-                               disp_rna, disp_adt, training)
-        likelihood_unobserved = tf.multiply(probs, 1 - masks)
-        likelihood_unobserved_rna += tf.reduce_sum(likelihood_unobserved[..., :self.config.dim_input_rna], -1)
-        likelihood_unobserved_adt += tf.reduce_sum(likelihood_unobserved[..., self.config.dim_input_rna:], -1)
 
-        '''
-        tf.print(
-            tf.reduce_sum(
-                probs[..., :self.config.dim_input_rna]
-            ),
-            tf.reduce_sum(
-                probs[..., self.config.dim_input_rna:]
+            # Eq[log q(z|x)]
+            self.add_loss(
+                (1-self.config.beta_unobs) * E_qzx_obs + 
+                  self.config.beta_unobs * (
+                      (1-self.config.beta_reverse) * E_qzx_unobs_1 + 
+                      self.config.beta_reverse * E_qzx_unobs_2)
             )
-        )
-        '''
 
-        
-        return  neg_kl, tf.reduce_mean(likelihood_unobserved_rna), \
-    tf.reduce_mean(likelihood_observed_rna),\
-    tf.reduce_mean(likelihood_unobserved_adt),\
-    tf.reduce_mean(likelihood_observed_adt)
-
-    
-    def prior_regularizer(self, prior):
-        # (batch_size, -1)
-        mu = prior.mean() # tf.reshape(prior.mean(), (self.config.batch_size, -1))
-        sigma = prior.scale # tf.reshape(prior.scale, (self.config.batch_size, -1))
-
-        # (batch_size, )
-        mu_regularizer = -tf.reduce_sum(tf.square(mu), -1) / (2 * self.config.sigma_mu ** 2)
-        sigma_regularizer = tf.reduce_sum((tf.math.log(sigma) - sigma), -1) * self.config.sigma_sigma
-        return mu_regularizer + sigma_regularizer
-
+        return self.losses
     
     @tf.function
-    def compute_apply_gradients(self, optimizer, inputs, masks, train_loss, train_loss_list):
-        with tf.GradientTape() as tape:
-            losses = self.compute_loss(inputs, masks, True)
-            loss = - (
-                (losses[0] + losses[1] + losses[3]) * self.config.alpha
-                      + (losses[2] + losses[4]) * (1-self.config.alpha)  
-            )/ self.config.scale_factor
-        train_loss(loss)
-        for i, l in enumerate(train_loss_list):
-            l(losses[i])
-
-        gradients = tape.gradient(loss, self.trainable_variables,
-                                  unconnected_gradients=tf.UnconnectedGradients.ZERO)
-        optimizer.apply_gradients(zip(gradients, self.trainable_variables))
-
-        
-    def generate_samples(self, inputs, masks, n_samples=10):
-        # (batch_size, width, height, channels)
-        observed_inputs = self.make_observed_inputs(inputs, masks)
-        # (batch_size, width, height, 2*channels)
-        observed_inputs_with_masks = tf.concat([observed_inputs, masks], axis=-1)
-
-        prior_params = self.prior_net(observed_inputs_with_masks, training=False)
-        prior_distribution = tfd.Normal(
-            loc=prior_params[..., :self.config.dim_latent],
-            scale=tf.clip_by_value(
-            tf.nn.softplus(prior_params[..., self.config.dim_latent:]),
-            1e-3,
-            tf.float32.max),
-            name="priors")
+    def _get_reconstruction_loss(self, x, bool_mask_in, bool_mask_out, batches, L, training=True):
+        '''
+        Parameters
+        ----------
+        bool_mask_in : tf.Tensor of type tf.bool
+            False indicates missing.
+        bool_mask_out : tf.Tensor of type tf.bool
+            Compute likelihood for entries with value True.
+        '''
+        _masks = tf.where(bool_mask_in, 0., 1.)
+        _x = tf.where(bool_mask_in, x, 0.)
+        embed = self.embed_layer(_masks)
+        z_mean, z_log_var, z = self.encoder(_x, embed, batches, L, training=training)       
+        log_probs = tf.reduce_mean(
+            self.decoder(x, embed, bool_mask_out, batches, z, training=training), axis=0)
+        return z_mean, z_log_var, z, log_probs
     
+    
+    @tf.function
+    def _get_kl_normal(self, mu_0, log_var_0, mu_1, log_var_1):
+        kl = 0.5 * (
+            tf.exp(tf.clip_by_value(log_var_0-log_var_1, -6., 6.)) + 
+            (mu_1 - mu_0)**2 / tf.exp(tf.clip_by_value(log_var_1, -6., 6.)) - 1.
+             + log_var_1 - log_var_0)
+        return tf.reduce_mean(tf.reduce_sum(kl, axis=-1))
+    
+    @tf.function
+    def _get_kl_loss(self, z, z_log_var, training=True):
+        log_p_z = self.latent_space(z, training=training)
+
+        E_qzx = - tf.reduce_mean(
+            0.5 * self.config.dim_latent *
+            (tf.math.log(tf.constant(2 * np.pi, tf.keras.backend.floatx())) + 1.0) +
+            0.5 * tf.reduce_sum(z_log_var, axis=-1)
+            )
+        return log_p_z, E_qzx
+    
+    
+    def get_recon(self, dataset_test, masks=None, L=50):
+        if masks is None:
+            masks = self.masks
         x_hat = []
-        y_hat = []
-        for _ in range(n_samples):
-            latent = prior_distribution.sample()
-            out = tf.nn.sigmoid(self.generative_net(latent, training=False))
-            if self.config.rna_dist=='NB':
-                lambda_z = out * np.log(10**4+1)
-                x_hat.append(lambda_z[..., :self.config.dim_input_rna])
-            else:
-                phi_rna = tf.clip_by_value(out[..., self.config.dim_input:], 1e-5, 1.-1e-5)
-                lambda_z = out[..., :self.config.dim_input] * np.log(10**4+1)
-                x_hat.append(lambda_z[..., :self.config.dim_input_rna] * (1-phi_rna))
-                
-            y_hat.append(lambda_z[..., self.config.dim_input_rna:])
+        for x,b,id_data in dataset_test:
+            m = tf.gather(masks, id_data)
+            _m = tf.where(m==0., 0., 1.)
+            embed = self.embed_layer(_m)
+            x = tf.where(m==0, x, 0.)
+            _, _, z = self.encoder(x, embed, b, L, False)
+            _x_hat = tf.reduce_mean(
+                self.decoder(x, embed, tf.ones_like(m,dtype=tf.bool), 
+                    b, z, training=False, return_prob=False), axis=1)
+            x_hat.append(_x_hat.numpy())
+        x_hat = np.concatenate(x_hat)        
+
+        return x_hat
+    
+    
+    def get_z(self, dataset_test):
+        '''Get \(q(Z_i|Y_i,X_i)\).
+
+        Parameters
+        ----------
+        dataset_test : tf.Dataset
+            Dataset containing (x, batches).
+
+        Returns
+        ----------
+        z_mean : np.array
+            \([B, d]\) The latent mean.
+        '''        
+        z_mean = []
+        for x,b,id_data in dataset_test:
+            m = tf.gather(self.masks, id_data)
+            m = tf.where(m==0., 0., 1.)
+            embed = self.embed_layer(m)
+            _z_mean, _, _ = self.encoder(x, embed, b, 1, False)         
+            z_mean.append(_z_mean.numpy())
+        z_mean = np.concatenate(z_mean)        
+
+        return z_mean
 
 
-        x_hat = tf.reduce_mean(tf.stack(x_hat, axis=1), axis=1)
-        y_hat = tf.reduce_mean(tf.stack(y_hat, axis=1), axis=1)        
-
-        return x_hat, y_hat
+    
