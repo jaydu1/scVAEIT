@@ -72,10 +72,6 @@ path_root = 'result/ex2/%s/'%cell_type_test
 
 dim_input_arr = [X.shape[1], Y.shape[1], Z.shape[1]]
 config = {
-#     "checkpoint_dir" : path_root+"checkpoints",
-#     "epochs" : 500,
-#     "summary" : path_root+"logs/gradient_tape",
-#     "delete_existing" : True,
     'dim_input_arr': dim_input_arr,
     'dimensions':[256], 
     'dim_latent':32,
