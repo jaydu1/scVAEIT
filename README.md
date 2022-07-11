@@ -1,6 +1,6 @@
 # Variational autoencoder for single-cell integration and transfer learning.
 
-This repository contains data and codes to reproduce results in the paper.
+This repository contains data and codes to reproduce results in the paper ''*Robust probabilistic modeling for single-cell multimodal mosaic integration and imputation*''.
 
 
 # Requirement
