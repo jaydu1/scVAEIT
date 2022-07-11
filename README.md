@@ -6,7 +6,7 @@ This repository contains data and codes to reproduce results in the paper.
 # Requirement
 
 
-Python packages for running scVAEIT
+Python packages for running `scVAEIT`
 
 ```
 python                    3.8.12
