@@ -2,7 +2,6 @@
 from typing import Optional
 
 from scVAEIT.utils import Early_Stopping
-from numba.core.types.scalars import Boolean
 
 import numpy as np
 import tensorflow as tf

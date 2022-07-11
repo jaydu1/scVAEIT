@@ -7,8 +7,6 @@ Sys.setenv("NUMEXPR_NUM_THREADS" = 6)
 library(Seurat)
 library(SeuratDisk)
 library(Signac)
-library(ggplot2)
-library(cowplot)
 
 library(dplyr)
 
