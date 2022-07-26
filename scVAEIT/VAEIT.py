@@ -198,7 +198,7 @@ class scVAEIT():
         return self.vae.get_z(self.dataset_full, masks)
 
 
-    def get_denoised_data(self, masks=None, batch_size_inference=512, L=50):
+    def get_denoised_data(self, masks=None, zero_out=True, batch_size_inference=512, L=50):
         if not hasattr(self, 'dataset_full'):
             self.dataset_full = tf.data.Dataset.from_tensor_slices((
                     self.data.astype(tf.keras.backend.floatx()), 
@@ -206,7 +206,7 @@ class scVAEIT():
                     self.id_dataset
                 )).batch(batch_size_inference).prefetch(tf.data.experimental.AUTOTUNE)
 
-        return self.vae.get_recon(self.dataset_full, masks, L)
+        return self.vae.get_recon(self.dataset_full, masks, zero_out, L)
 
     
     def visualize_latent(self, method: str = "UMAP", 

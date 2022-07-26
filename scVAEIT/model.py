@@ -196,7 +196,7 @@ class VariationalAutoEncoder(tf.keras.Model):
         return log_p_z, E_qzx
     
     
-    def get_recon(self, dataset_test, masks=None, L=50):
+    def get_recon(self, dataset_test, masks=None, zero_out=True, L=50):
         if masks is None:
             masks = self.masks
         x_hat = []
@@ -204,7 +204,8 @@ class VariationalAutoEncoder(tf.keras.Model):
             m = tf.gather(masks, id_data)
             _m = tf.where(m==0., 0., 1.)
             embed = self.embed_layer(_m)
-            x = tf.where(m==0, x, 0.)
+            if zero_out:
+                x = tf.where(m==0, x, 0.)
             _, _, z = self.encoder(x, embed, b, L, False)
             _x_hat = tf.reduce_mean(
                 self.decoder(x, embed, tf.ones_like(m,dtype=tf.bool), 
