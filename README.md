@@ -1,6 +1,6 @@
 # Variational autoencoder for multimodal single-cell mosaic integration and transfer learning.
 
-This repository contains data and codes to reproduce results in the paper ''*Robust probabilistic modeling for single-cell multimodal mosaic integration and imputation via scVAEIT*''.
+This repository contains data and codes to reproduce results in the paper ''*Robust probabilistic modeling for single-cell multimodal mosaic integration and imputation via scVAEIT*'' ([bioRxiv](https://doi.org/10.1101/2022.07.25.501456)).
 
 
 # Requirement
