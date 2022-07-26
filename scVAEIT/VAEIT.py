@@ -1,5 +1,6 @@
 import warnings
 from typing import Optional, Union
+from types import SimpleNamespace
 
 import scVAEIT.model as model 
 import scVAEIT.train as train
@@ -8,6 +9,8 @@ import tensorflow as tf
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.model_selection import train_test_split
 import numpy as np
+
+import scanpy as sc
 
 
 class scVAEIT():
@@ -46,8 +49,7 @@ class scVAEIT():
 
         self.data = data
         
-        if isinstance(config, dict):
-            from types import SimpleNamespace
+        if isinstance(config, dict):            
             config = SimpleNamespace(**config)
 
         if batches is None:
@@ -172,13 +174,13 @@ class scVAEIT():
         print("Loaded checkpoint: {}".format(status))
     
         
-    def update_z(self):
-        self.z = self.get_latent_z()        
+    def update_z(self, masks=None, batch_size_inference=512):
+        self.z = self.get_latent_z(masks, batch_size_inference)
         self.adata = sc.AnnData(self.z)
         sc.pp.neighbors(self.adata)
 
             
-    def get_latent_z(self, batch_size_inference=512):
+    def get_latent_z(self, masks=None, batch_size_inference=512):
         ''' get the posterier mean of current latent space z (encoder output)
 
         Returns
@@ -193,8 +195,19 @@ class scVAEIT():
                     self.id_dataset
                 )).batch(batch_size_inference).prefetch(tf.data.experimental.AUTOTUNE)
 
-        return self.vae.get_z(self.dataset_full)
-            
+        return self.vae.get_z(self.dataset_full, masks)
+
+
+    def get_denoised_data(self, masks=None, batch_size_inference=512, L=50):
+        if not hasattr(self, 'dataset_full'):
+            self.dataset_full = tf.data.Dataset.from_tensor_slices((
+                    self.data.astype(tf.keras.backend.floatx()), 
+                    self.batches.astype(tf.keras.backend.floatx()),
+                    self.id_dataset
+                )).batch(batch_size_inference).prefetch(tf.data.experimental.AUTOTUNE)
+
+        return self.vae.get_recon(self.dataset_full, masks, L)
+
     
     def visualize_latent(self, method: str = "UMAP", 
                          color = None, **kwargs):

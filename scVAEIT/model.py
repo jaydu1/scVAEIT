@@ -215,7 +215,7 @@ class VariationalAutoEncoder(tf.keras.Model):
         return x_hat
     
     
-    def get_z(self, dataset_test):
+    def get_z(self, dataset_test, masks=None):
         '''Get \(q(Z_i|Y_i,X_i)\).
 
         Parameters
@@ -227,10 +227,12 @@ class VariationalAutoEncoder(tf.keras.Model):
         ----------
         z_mean : np.array
             \([B, d]\) The latent mean.
-        '''        
+        '''
+        if masks is None:
+            masks = self.masks
         z_mean = []
         for x,b,id_data in dataset_test:
-            m = tf.gather(self.masks, id_data)
+            m = tf.gather(masks, id_data)
             m = tf.where(m==0., 0., 1.)
             embed = self.embed_layer(m)
             _z_mean, _, _ = self.encoder(x, embed, b, 1, False)         
