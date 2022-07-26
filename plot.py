@@ -570,7 +570,7 @@ masks = tf.convert_to_tensor(masks, dtype=tf.float32)
 
 from types import SimpleNamespace
 
-path_root = 'result/ex3/'
+path_root = 'result/ex3/full'
 config = {
     'dim_input_arr': dim_input_arr,
     'dimensions':[256], 

@@ -1,6 +1,5 @@
 import warnings
 from typing import Optional, Union
-from types import SimpleNamespace
 
 import scVAEIT.model as model 
 import scVAEIT.train as train
@@ -47,6 +46,10 @@ class scVAEIT():
 
         self.data = data
         
+        if isinstance(config, dict):
+            from types import SimpleNamespace
+            config = SimpleNamespace(**config)
+
         if batches is None:
             batches = np.zeros((data.shape[0],1), dtype=np.float32)
         if masks is None:

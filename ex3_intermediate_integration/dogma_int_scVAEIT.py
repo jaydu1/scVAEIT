@@ -121,6 +121,6 @@ from scVAEIT.VAEIT import scVAEIT
 model = scVAEIT(config, data[cell_types!=cell_type_test], masks, batches[cell_types!=cell_type_test])
 del data, masks
 model.train(
-        valid=False, num_epoch=500, batch_size=512, save_every_epoch=50
+        valid=False, num_epoch=300, batch_size=512, save_every_epoch=50
         verbose=True, checkpoint_dir=path_root+'checkpoint/')
 

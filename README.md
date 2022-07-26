@@ -1,6 +1,6 @@
-# Variational autoencoder for single-cell integration and transfer learning.
+# Variational autoencoder for multimodal single-cell mosaic integration and transfer learning.
 
-This repository contains data and codes to reproduce results in the paper ''*Robust probabilistic modeling for single-cell multimodal mosaic integration and imputation*''.
+This repository contains data and codes to reproduce results in the paper ''*Robust probabilistic modeling for single-cell multimodal mosaic integration and imputation via scVAEIT*''.
 
 
 # Requirement
@@ -57,3 +57,27 @@ r-seuratobject            4.0.4
 r-shiny                   1.7.1
 r-signac                  1.2.1
 ```
+
+
+# Files
+
+- `./data/` contains raw and preprocessed data, as well as the instruction file.
+- `./ex1_bimodal/` contains scripts for bimodal experiments of a CITE-seq PBMC dataset, a CITE-seq CBMC dataset, and a REAP-seq PBMC dataset.
+
+	- `pbmc_Mono_dimlatent.py`: Experiments with varying latent dimensions on the Mono cell type of the CITE-seq dataset from Seurat v4's paper (Tab. S2).
+
+	- `pbmc_scVAEIT.py`, `pbmc_totalVI.py`, and `pbmc_Seurat.R`: They require an integer (0-1 for Mono and CD4 T) as input to the program (Fig. 1a).
+
+	- `pbmc_external_scVAEIT.py`, `pbmc_external_totalVI.py`, and `pbmc_external_Seurat.R`: Experiments on external datasets (Fig. 1b-c).
+
+- `./ex2_trimodal/` contains scripts for trimodal experiments of a DOGMA-seq PBMC dataset.
+
+	- `dogma_scVAEIT.py`, `dogma_MultiVI.py`, `dogma_totalVI.py`, and `dogma_Seurat.R`: Experiments on trimodal datasets (Fig. 3 and Fig. 4).
+
+- `./ex3_intermediate_integration/` contains scripts for trimodal intermediate integration.
+
+	- `dogma_int_scVAEIT.py` and `dogma_int_Seurat.R`: Experiments on two-phase mosaic integration (Fig. 5a).
+
+	- `dogma_int_scVAEIT_full.py`: Experiment of intermediate integration of a DOGMA-seq PBMC dataset, a CITE-seq PBMC dataset and an ASAP-seq PBMC dataset (Fig. 5b).
+
+- `plot.py` produces the figures.
