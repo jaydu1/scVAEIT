@@ -192,5 +192,5 @@ umap_coord <- rbind(
     data_ref_cite[['ref.umap']]@cell.embeddings,
     data_ref_asap[['ref.umap']]@cell.embeddings
 )
-write.csv(umap_coord[,1:2], 'Seurat_embedding.csv')
+write.csv(umap_coord[,1:2], 'result/ex3/full/Seurat_embedding.csv')
 save.image(file = "result/ex3/dogma_combined.RData")
