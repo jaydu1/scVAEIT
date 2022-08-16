@@ -570,7 +570,7 @@ masks = tf.convert_to_tensor(masks, dtype=tf.float32)
 
 from types import SimpleNamespace
 
-path_root = 'result/ex3/full'
+path_root = 'result/ex3/full/'
 config = {
     'dim_input_arr': dim_input_arr,
     'dimensions':[256], 
@@ -649,8 +649,6 @@ adata.obsm = model.adata.obsm
 adata.obs = model.adata.obs
 
 umap_seurat = pd.read_csv('result/ex3/full/Seurat_embedding.csv', index_col=0)
-
-adata.obsm['X_umap_seurat'] = adata.obsm['X_umap'].copy()
 adata.obsm['X_umap_seurat'] = umap_seurat.values
 
 
@@ -690,6 +688,7 @@ fig, axes = plt.subplots(1,2,figsize=(8,4))
 
 model.visualize_latent(method = "UMAP", color = 'Condition', ax=axes[0], show=False)
 model.visualize_latent(method = "UMAP", color = 'Dataset', ax=axes[1], show=False)
+adata.obsm['X_umap'] = model.adata.obsm['X_umap']
 
 # Hide the right and top spines
 axes[0].spines.right.set_visible(False)
