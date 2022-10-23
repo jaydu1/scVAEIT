@@ -124,3 +124,40 @@ model.train(
         valid=False, num_epoch=300, batch_size=512, save_every_epoch=50
         verbose=True, checkpoint_dir=path_root+'checkpoint/')
 
+
+'''
+Evaluate
+'''
+
+def comp_cor_flatten(x, y):
+    pearson_r, pearson_p = scipy.stats.pearsonr(x, y)
+    print(f"Found pearson's correlation/p of {pearson_r:.4f}/{pearson_p:.4g}")
+    spearman_corr, spearman_p = scipy.stats.spearmanr(x, y)
+    print(f"Found spearman's collelation/p of {spearman_corr:.4f}/{spearman_p:.4g}")
+    return pearson_r, spearman_corr
+
+
+def evaluate(vae, dataset_test, Y_test):
+    mask_adt = vae.masks.copy()
+    mask_adt[:,vae.config.dim_input_arr[0]:-vae.config.dim_input_arr[-1]] = -1.
+    recon = vae.get_recon(dataset_test, mask_adt)
+    Y_hat = recon[:, vae.config.dim_input_arr[0]:-vae.config.dim_input_arr[-1]]
+    res = []
+    name_list = ['dogma','cite','asap']
+    for i in range(3):
+        name = name_list[i]
+        for batch in [0,1]:
+            id_data = (batch_test[:,0]==batch)&(batch_test[:,-1]==i)
+            id_adt = vae.masks[i,vae.config.dim_input_arr[0]:-vae.config.dim_input_arr[-1]]!=-1
+            _Y_hat = Y_hat[id_data,:][:,id_adt]
+            _Y_test = Y_test[id_data,:][:,id_adt]
+
+            pr, sr = comp_cor_flatten(_Y_test.flatten(), _Y_hat.flatten())
+            mse = np.mean((_Y_test.flatten()-_Y_hat.flatten())**2)
+            res.append([cell_type_test, name, 'ADT', batch, pr, sr, mse])
+
+    pd.DataFrame(res, 
+        columns=['Celltype', 'Name', 'Target', 'Batch', 'Metric_1', 'Metric_2', 'MSE']).to_csv(path_root+'res_scVAEIT_overall.csv')
+
+
+evaluate(model.vae, dataset_test, Y_test)
