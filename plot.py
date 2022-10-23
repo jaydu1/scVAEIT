@@ -270,7 +270,7 @@ for target in ['RNA', 'ADT']:
     plt.savefig('result/{}.png'.format(name), dpi=300, bbox_inches='tight', pad_inches=0) 
 
 
-metric_list = ['AUC','BCE','RMSE']
+metric_list = ['AUC','ACC','RMSE']
 target = 'ATAC'
 fig, axes = plt.subplots(2,3,
                          sharex=True, sharey=True, figsize=(18,6)#, gridspec_kw=dict(width_ratios=[4,1,0.2])
