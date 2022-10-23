@@ -649,7 +649,41 @@ adata.obsm = model.adata.obsm
 adata.obs = model.adata.obs
 
 umap_seurat = pd.read_csv('result/ex3/full/Seurat_embedding.csv', index_col=0)
+umap_UINMF = pd.read_csv('result/ex3/full/UINMF_embedding.csv', index_col=0)
 adata.obsm['X_umap_seurat'] = umap_seurat.values
+adata.obsm['X_umap_UINMF'] = umap_UINMF.values
+
+
+fig, axes = plt.subplots(1,2,figsize=(8,4))
+
+model.visualize_latent(method = "UMAP", color = 'Condition', ax=axes[0], show=False)
+model.visualize_latent(method = "UMAP", color = 'Dataset', ax=axes[1], show=False)
+
+# Hide the right and top spines
+axes[0].spines.right.set_visible(False)
+axes[0].spines.top.set_visible(False)
+
+# Only show ticks on the left and bottom spines
+axes[0].yaxis.set_ticks_position('left')
+axes[0].xaxis.set_ticks_position('bottom')
+axes[0].legend(loc='lower left')
+axes[0].set_xlabel('UMAP1')
+axes[0].set_ylabel('UMAP2')
+axes[0].text(-.10, 0.5, 'scVAEIT',
+        horizontalalignment='right',
+        verticalalignment='center',
+        rotation='vertical',
+        transform=axes[0].transAxes, fontsize=14)
+
+axes[1].spines.right.set_visible(False)
+axes[1].spines.top.set_visible(False)
+axes[1].yaxis.set_ticks_position('left')
+axes[1].legend(loc='lower left')
+axes[1].set_xlabel('UMAP1')
+axes[1].set_ylabel('UMAP2')
+
+plt.tight_layout()
+plt.savefig('result/Fig5b-1.png', dpi=300, bbox_inches='tight', pad_inches=0) 
 
 
 fig, axes = plt.subplots(1,2,figsize=(8,4))
@@ -680,15 +714,13 @@ axes[1].set_xlabel('UMAP1')
 axes[1].set_ylabel('UMAP2')
 
 plt.tight_layout()
-plt.savefig('result/Fig5b-1.png', dpi=300, bbox_inches='tight', pad_inches=0) 
+plt.savefig('result/Fig5b-2.png', dpi=300, bbox_inches='tight', pad_inches=0) 
 
 
 
 fig, axes = plt.subplots(1,2,figsize=(8,4))
-
-model.visualize_latent(method = "UMAP", color = 'Condition', ax=axes[0], show=False)
-model.visualize_latent(method = "UMAP", color = 'Dataset', ax=axes[1], show=False)
-adata.obsm['X_umap'] = model.adata.obsm['X_umap']
+sc.pl.embedding(adata, color='Condition', basis='X_umap_UINMF', ax=axes[0], show=False)
+sc.pl.embedding(adata, color='Dataset', basis='X_umap_UINMF',  ax=axes[1], show=False)
 
 # Hide the right and top spines
 axes[0].spines.right.set_visible(False)
@@ -700,7 +732,7 @@ axes[0].xaxis.set_ticks_position('bottom')
 axes[0].legend(loc='lower left')
 axes[0].set_xlabel('UMAP1')
 axes[0].set_ylabel('UMAP2')
-axes[0].text(-.10, 0.5, 'scVAEIT',
+axes[0].text(-.10, 0.5, 'UINMF',
         horizontalalignment='right',
         verticalalignment='center',
         rotation='vertical',
@@ -714,9 +746,10 @@ axes[1].set_xlabel('UMAP1')
 axes[1].set_ylabel('UMAP2')
 
 plt.tight_layout()
-plt.savefig('result/Fig5b-2.png', dpi=300, bbox_inches='tight', pad_inches=0) 
+plt.savefig('result/Fig5b-3.png', dpi=300, bbox_inches='tight', pad_inches=0) 
 
 
+adata.obsm['X_umap'] = model.adata.obsm['X_umap']
 fig, axes = plt.subplots(1,2,figsize=(9,4))
 sc.pl.umap(adata[adata.obs['Condition']=='Control'], color='CD3-1', ax=axes[0], #colorbar_loc=None, 
            show=False)
@@ -742,7 +775,7 @@ axes[1].set_ylabel('UMAP2')
 axes[1].set_title('CD3 Protein (Stimulation)')
 
 plt.tight_layout()
-plt.savefig('result/Fig5b-3.png', dpi=300, bbox_inches='tight', pad_inches=0) 
+plt.savefig('result/Fig5b-4.png', dpi=300, bbox_inches='tight', pad_inches=0) 
 
 
 fig, axes = plt.subplots(1,2,figsize=(9,4))
@@ -770,4 +803,273 @@ axes[1].set_title('CD3 Protein (Stimulation)')
 
 
 plt.tight_layout()
-plt.savefig('result/Fig5b-4.png', dpi=300, bbox_inches='tight', pad_inches=0) 
+plt.savefig('result/Fig5b-5.png', dpi=300, bbox_inches='tight', pad_inches=0) 
+
+
+fig, axes = plt.subplots(1,2,figsize=(9,4))
+sc.pl.embedding(adata[adata.obs['Condition']=='Control'], color='CD3-1', ax=axes[0], show=False, basis='X_umap_UINMF')
+sc.pl.embedding(adata[adata.obs['Condition']=='Stimulation'], color='CD3-1', ax=axes[1], show=False, basis='X_umap_UINMF')
+
+# Hide the right and top spines
+axes[0].spines.right.set_visible(False)
+axes[0].spines.top.set_visible(False)
+
+# Only show ticks on the left and bottom spines
+axes[0].yaxis.set_ticks_position('left')
+axes[0].xaxis.set_ticks_position('bottom')
+# axes[0].legend(loc='lower left')
+axes[0].set_xlabel('UMAP1')
+axes[0].set_ylabel('UMAP2')
+axes[0].set_title('CD3 Protein (Control)')
+
+axes[1].spines.right.set_visible(False)
+axes[1].spines.top.set_visible(False)
+axes[1].yaxis.set_ticks_position('left')
+axes[1].set_xlabel('UMAP1')
+axes[1].set_ylabel('UMAP2')
+axes[1].set_title('CD3 Protein (Stimulation)')
+
+
+plt.tight_layout()
+plt.savefig('result/Fig5b-6.png', dpi=300, bbox_inches='tight', pad_inches=0) 
+
+
+
+
+'''
+FigS5 integration
+'''
+
+fig, axes = plt.subplots(3,1,figsize=(5.5,12))
+
+model.visualize_latent(method = "UMAP", color = 'Cell Types', ax=axes[0], show=False)
+
+# Hide the right and top spines
+axes[0].spines.right.set_visible(False)
+axes[0].spines.top.set_visible(False)
+
+# Only show ticks on the left and bottom spines
+axes[0].yaxis.set_ticks_position('left')
+axes[0].xaxis.set_ticks_position('bottom')
+# axes[0].legend(loc='lower left')
+axes[0].set_xlabel('UMAP1')
+axes[0].set_ylabel('UMAP2')
+axes[0].text(-.10, 0.5, 'scVAEIT',
+        horizontalalignment='right',
+        verticalalignment='center',
+        rotation='vertical',
+        transform=axes[0].transAxes, fontsize=14)
+axes[0].set_title('Annotated Cell Types')
+
+# axes[1].spines.right.set_visible(False)
+# axes[1].spines.top.set_visible(False)
+# ax.yaxis.set_ticks_position('left')
+# axes[1].legend(loc='lower left')
+
+sc.pl.embedding(adata, color='Cell Types', basis='X_umap_seurat',  ax=axes[1], show=False)
+# Hide the right and top spines
+axes[1].spines.right.set_visible(False)
+axes[1].spines.top.set_visible(False)
+
+# Only show ticks on the left and bottom spines
+axes[1].yaxis.set_ticks_position('left')
+axes[1].xaxis.set_ticks_position('bottom')
+# axes[1].legend(loc='lower left')
+axes[1].set_xlabel('UMAP1')
+axes[1].set_ylabel('UMAP2')
+axes[1].set_title('Annotated Cell Types')
+
+axes[1].text(-.10, 0.5, 'Seurat',
+        horizontalalignment='right',
+        verticalalignment='center',
+        rotation='vertical',
+        transform=axes[1].transAxes, fontsize=14)
+
+sc.pl.embedding(adata, color='Cell Types', basis='X_umap_UINMF',  ax=axes[2], show=False)
+# Hide the right and top spines
+axes[2].spines.right.set_visible(False)
+axes[2].spines.top.set_visible(False)
+
+# Only show ticks on the left and bottom spines
+axes[2].yaxis.set_ticks_position('left')
+axes[1].xaxis.set_ticks_position('bottom')
+# axes[1].legend(loc='lower left')
+axes[2].set_xlabel('UMAP1')
+axes[2].set_ylabel('UMAP2')
+axes[2].set_title('Annotated Cell Types')
+
+axes[2].text(-.10, 0.5, 'UINMF',
+        horizontalalignment='right',
+        verticalalignment='center',
+        rotation='vertical',
+        transform=axes[2].transAxes, fontsize=14)
+
+plt.tight_layout()
+plt.savefig('result/umap_celltype.png', dpi=300, bbox_inches='tight', pad_inches=0) 
+
+
+
+fig, axes = plt.subplots(1,2,figsize=(9,4))
+sc.pl.umap(adata[adata.obs['Condition']=='Control'], color='CD69', ax=axes[0], #colorbar_loc=None, 
+           show=False)
+sc.pl.umap(adata[adata.obs['Condition']=='Stimulation'], color='CD69', ax=axes[1], show=False)
+
+# Hide the right and top spines
+axes[0].spines.right.set_visible(False)
+axes[0].spines.top.set_visible(False)
+
+# Only show ticks on the left and bottom spines
+axes[0].yaxis.set_ticks_position('left')
+axes[0].xaxis.set_ticks_position('bottom')
+# axes[0].legend(loc='lower left')
+axes[0].set_xlabel('UMAP1')
+axes[0].set_ylabel('UMAP2')
+axes[0].set_title('CD69 Protein (Control)')
+
+axes[1].spines.right.set_visible(False)
+axes[1].spines.top.set_visible(False)
+axes[1].yaxis.set_ticks_position('left')
+axes[1].set_xlabel('UMAP1')
+axes[1].set_ylabel('UMAP2')
+axes[1].set_title('CD69 Protein (Stimulation)')
+
+plt.tight_layout()
+plt.savefig('result/umap_CD69_scVAEIT.png', dpi=300, bbox_inches='tight', pad_inches=0) 
+
+fig, axes = plt.subplots(1,2,figsize=(9,4))
+sc.pl.embedding(adata[adata.obs['Condition']=='Control'], color='CD69', ax=axes[0], show=False, basis='X_umap_seurat')
+sc.pl.embedding(adata[adata.obs['Condition']=='Stimulation'], color='CD69', ax=axes[1], show=False, basis='X_umap_seurat')
+
+# Hide the right and top spines
+axes[0].spines.right.set_visible(False)
+axes[0].spines.top.set_visible(False)
+
+# Only show ticks on the left and bottom spines
+axes[0].yaxis.set_ticks_position('left')
+axes[0].xaxis.set_ticks_position('bottom')
+# axes[0].legend(loc='lower left')
+axes[0].set_xlabel('UMAP1')
+axes[0].set_ylabel('UMAP2')
+axes[0].set_title('CD69 Protein (Control)')
+
+axes[1].spines.right.set_visible(False)
+axes[1].spines.top.set_visible(False)
+axes[1].yaxis.set_ticks_position('left')
+axes[1].set_xlabel('UMAP1')
+axes[1].set_ylabel('UMAP2')
+axes[1].set_title('CD69 Protein (Stimulation)')
+
+plt.tight_layout()
+plt.savefig('result/umap_CD69_Seurat.png', dpi=300, bbox_inches='tight', pad_inches=0) 
+
+
+
+fig, axes = plt.subplots(1,2,figsize=(9,4))
+sc.pl.embedding(adata[adata.obs['Condition']=='Control'], color='CD69', ax=axes[0], show=False, basis='X_umap_UINMF')
+sc.pl.embedding(adata[adata.obs['Condition']=='Stimulation'], color='CD69', ax=axes[1], show=False, basis='X_umap_UINMF')
+
+# Hide the right and top spines
+axes[0].spines.right.set_visible(False)
+axes[0].spines.top.set_visible(False)
+
+# Only show ticks on the left and bottom spines
+axes[0].yaxis.set_ticks_position('left')
+axes[0].xaxis.set_ticks_position('bottom')
+# axes[0].legend(loc='lower left')
+axes[0].set_xlabel('UMAP1')
+axes[0].set_ylabel('UMAP2')
+axes[0].set_title('CD69 Protein (Control)')
+
+axes[1].spines.right.set_visible(False)
+axes[1].spines.top.set_visible(False)
+axes[1].yaxis.set_ticks_position('left')
+axes[1].set_xlabel('UMAP1')
+axes[1].set_ylabel('UMAP2')
+axes[1].set_title('CD69 Protein (Stimulation)')
+
+
+plt.tight_layout()
+plt.savefig('result/umap_CD69_UINMF.png', dpi=300, bbox_inches='tight', pad_inches=0) 
+
+fig, axes = plt.subplots(1,2,figsize=(9,4))
+sc.pl.umap(adata[adata.obs['Condition']=='Control'], color='CD279', ax=axes[0], #colorbar_loc=None, 
+           show=False)
+sc.pl.umap(adata[adata.obs['Condition']=='Stimulation'], color='CD279', ax=axes[1], show=False)
+
+# Hide the right and top spines
+axes[0].spines.right.set_visible(False)
+axes[0].spines.top.set_visible(False)
+
+# Only show ticks on the left and bottom spines
+axes[0].yaxis.set_ticks_position('left')
+axes[0].xaxis.set_ticks_position('bottom')
+# axes[0].legend(loc='lower left')
+axes[0].set_xlabel('UMAP1')
+axes[0].set_ylabel('UMAP2')
+axes[0].set_title('CD279 Protein (Control)')
+
+axes[1].spines.right.set_visible(False)
+axes[1].spines.top.set_visible(False)
+axes[1].yaxis.set_ticks_position('left')
+axes[1].set_xlabel('UMAP1')
+axes[1].set_ylabel('UMAP2')
+axes[1].set_title('CD279 Protein (Stimulation)')
+
+plt.tight_layout()
+plt.savefig('result/umap_CD279_scVAEIT.png', dpi=300, bbox_inches='tight', pad_inches=0) 
+
+
+fig, axes = plt.subplots(1,2,figsize=(9,4))
+sc.pl.embedding(adata[adata.obs['Condition']=='Control'], color='CD279', ax=axes[0], show=False, basis='X_umap_seurat')
+sc.pl.embedding(adata[adata.obs['Condition']=='Stimulation'], color='CD279', ax=axes[1], show=False, basis='X_umap_seurat')
+
+# Hide the right and top spines
+axes[0].spines.right.set_visible(False)
+axes[0].spines.top.set_visible(False)
+
+# Only show ticks on the left and bottom spines
+axes[0].yaxis.set_ticks_position('left')
+axes[0].xaxis.set_ticks_position('bottom')
+# axes[0].legend(loc='lower left')
+axes[0].set_xlabel('UMAP1')
+axes[0].set_ylabel('UMAP2')
+axes[0].set_title('CD279 Protein (Control)')
+
+axes[1].spines.right.set_visible(False)
+axes[1].spines.top.set_visible(False)
+axes[1].yaxis.set_ticks_position('left')
+axes[1].set_xlabel('UMAP1')
+axes[1].set_ylabel('UMAP2')
+axes[1].set_title('CD279 Protein (Stimulation)')
+
+plt.tight_layout()
+plt.savefig('result/umap_CD279_Seurat.png', dpi=300, bbox_inches='tight', pad_inches=0) 
+
+
+
+fig, axes = plt.subplots(1,2,figsize=(9,4))
+sc.pl.embedding(adata[adata.obs['Condition']=='Control'], color='CD279', ax=axes[0], show=False, basis='X_umap_UINMF')
+sc.pl.embedding(adata[adata.obs['Condition']=='Stimulation'], color='CD279', ax=axes[1], show=False, basis='X_umap_UINMF')
+
+# Hide the right and top spines
+axes[0].spines.right.set_visible(False)
+axes[0].spines.top.set_visible(False)
+
+# Only show ticks on the left and bottom spines
+axes[0].yaxis.set_ticks_position('left')
+axes[0].xaxis.set_ticks_position('bottom')
+# axes[0].legend(loc='lower left')
+axes[0].set_xlabel('UMAP1')
+axes[0].set_ylabel('UMAP2')
+axes[0].set_title('CD279 Protein (Control)')
+
+axes[1].spines.right.set_visible(False)
+axes[1].spines.top.set_visible(False)
+axes[1].yaxis.set_ticks_position('left')
+axes[1].set_xlabel('UMAP1')
+axes[1].set_ylabel('UMAP2')
+axes[1].set_title('CD279 Protein (Stimulation)')
+
+
+plt.tight_layout()
+plt.savefig('result/umap_CD279_UINMF.png', dpi=300, bbox_inches='tight', pad_inches=0)
