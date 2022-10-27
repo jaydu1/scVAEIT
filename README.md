@@ -80,4 +80,8 @@ r-signac                  1.2.1
 
 	- `dogma_int_scVAEIT_full.py`: Experiment of intermediate integration of a DOGMA-seq PBMC dataset, a CITE-seq PBMC dataset and an ASAP-seq PBMC dataset (Fig. 5b).
 
+- `./ex4_masking_prob/` contains a script for the sensitivity analysis of the masking probability (Fig. S8).
+
+- `./ex5_multi_single_modal/` contains a script for the comparison with and without single-modal datasets included (Fig. S9).
+
 - `plot.py` produces the figures.
