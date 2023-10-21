@@ -13,7 +13,7 @@ The dependencies can be installed via the following commands:
 mamba create --name tf python=3.9 -y
 conda activate tf
 mamba install -c conda-forge "tensorflow>=2.12" "tensorflow-probability>=0.12" pandas jupyter -y
-mamba install -c conda-forge "scanpy>=1.9.2" matplotlib numba seaborn scikit-learn -y
+mamba install -c conda-forge "scanpy>=1.9.2" matplotlib scikit-learn -y
 ```
 
 If you are using `conda`, simply replace `mamba` above by `conda`.
