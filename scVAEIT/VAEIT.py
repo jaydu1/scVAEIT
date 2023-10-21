@@ -62,7 +62,6 @@ class scVAEIT():
         config = {**{'beta_kl':1., # weight for beta-VAE
                      'beta_reverse':0., # weight for reverse prediction (use masked out features to predict the observed features)
                     }, **config}
-         
         
         if isinstance(config, dict):            
             config = SimpleNamespace(**config)
