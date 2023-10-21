@@ -1,6 +1,8 @@
 __all__ = ['scVAEIT']
 
 from scVAEIT.model import VariationalAutoEncoder
+from scVAEIT.utils import reset_random_seeds
+from scVAEIT.VAEIT import scVAEIT
 
 __author__ = "Jin-Hong Du"
 __copyright__ = "Copyright 2022, The Cross-Modalilty Transfer Learning Project"

@@ -1,5 +1,24 @@
+import os
+import random
 import numpy as np
 import tensorflow as tf
+
+
+
+def reset_random_seeds(seed):
+    os.environ['PYTHONHASHSEED']=str(seed)
+    tf.random.set_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+
+
+def check_arr_type(arr, dtype):    
+    if np.isscalar(arr):
+        arr = np.array([arr], dtype=dtype)
+    else:
+        arr = np.array(arr, dtype=dtype)
+    return arr
+
 
 class MaskGenerator(object):
     def __init__(self, p=0.95):
@@ -60,6 +79,7 @@ class ModalMaskGenerator(object):
     def __call__(self, inputs, missing_mask=None, p=None):
         if p is None:
             p = self.p_feat
+
         # (batch_size, dim_rna + dim_adt)
         mask = np.random.choice(2, size=inputs.shape,
                                 p=[1 - p, p]).astype(tf.keras.backend.floatx())
@@ -67,22 +87,21 @@ class ModalMaskGenerator(object):
         # No random missing
         mask_modal = np.random.choice(2, size=(inputs.shape[0], ))
         mask[mask_modal==0, :] = 0.
-        #mask[:, self.segment_ids==2] = 0.
         
         # Modality missing
-        mask_modal = np.random.choice(len(self.dim_arr), size=(inputs.shape[0], ), p=self.p_modal)
         if missing_mask is None:
-            for i in np.arange(len(self.dim_arr)):                
-                mask[np.ix_(mask_modal==i, self.segment_ids==i)] = 1.
-        else:
+            missing_mask = np.zeros_like(inputs)
+        if len(self.dim_arr)>1:
+            mask_modal = np.random.choice(len(self.dim_arr), size=(inputs.shape[0], ), p=self.p_modal)            
             has_modal = tf.transpose(
                 tf.math.segment_sum(tf.transpose(missing_mask+1), self.segment_ids)).numpy()
             for i in np.arange(len(self.dim_arr)):                
                 mask[np.ix_(
                     (mask_modal==i)&
-                     np.any(has_modal[:,np.arange(len(self.dim_arr))!=i]>0., axis=-1), 
-                     self.segment_ids==i)] = 1.
-            mask = np.where(missing_mask==-1., -1., mask)
+                    np.any(has_modal[:,np.arange(len(self.dim_arr))!=i]>0., axis=-1), 
+                    self.segment_ids==i)] = 1.
+            
+        mask = np.where(missing_mask==-1., -1., mask)
         
         return mask
     
