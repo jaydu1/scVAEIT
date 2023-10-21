@@ -18,6 +18,10 @@ mamba install -c conda-forge "scanpy>=1.9.2" matplotlib numba seaborn scikit-lea
 
 If you are using `conda`, simply replace `mamba` above by `conda`.
 
+
+# Reproducibility Materials
+The code for reproducing results in the paper can be found at the folder `Reproducibility materials`.
+
 # Parameters
 ## Network parameters
 
