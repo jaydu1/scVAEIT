@@ -100,7 +100,6 @@ class scVAEIT():
         if config.beta_modal is None:
             config.beta_modal = np.ones(n_modal, dtype=np.float32)
 
-        if
         self.config = config
 
         # preprocess batch
