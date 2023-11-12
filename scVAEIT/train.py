@@ -130,7 +130,7 @@ def train(dataset_train, dataset_valid, vae, checkpoint_dir,
 
         if verbose:
             progbar = Progbar(num_step_per_epoch)
-            print('Pretrain - Start of epoch %d' % (epoch,))
+            print('Train - Start of epoch %d' % (epoch,))
         else:
             if (epoch+1)%2==0 or epoch+1==num_epoch:
                 progbar.update(epoch+1)
