@@ -17,6 +17,7 @@ import numpy as np
 import scanpy as sc
 
 
+
 class scVAEIT():
     """
     Variational Inference for Trajectory by AutoEncoder.
@@ -61,6 +62,8 @@ class scVAEIT():
         # prprocessing config
         config = {**{'beta_kl':1., # weight for beta-VAE
                      'beta_reverse':0., # weight for reverse prediction (use masked out features to predict the observed features)
+                     'skip_conn':False, # whether to use skip connection in decoder
+                     'max_vals':None
                     }, **config}
         
         if isinstance(config, dict):            
@@ -71,7 +74,7 @@ class scVAEIT():
         n_modal = len(config.dim_input_arr)
         if config.uni_block_names is None:
             config.uni_block_names = np.char.add(
-                np.repeat('NB-', n_modal), np.arange(n_modal).astype(str)
+                np.repeat('M-', n_modal), np.arange(n_modal).astype(str)
             )
         
         if config.dim_block is None:
@@ -82,9 +85,11 @@ class scVAEIT():
         n_block = len(config.dim_block)
         if config.dist_block is None:
             config.dist_block = np.repeat('NB', n_block)
+        else:
+            config.dist_block = check_arr_type(config.dist_block, str)
         if config.block_names is None:
             config.block_names = np.char.add(
-                np.repeat('NB-', n_block), np.arange(n_block).astype(str)
+                np.repeat('M-', n_block), np.arange(n_block).astype(str)
             )
         if np.isscalar(config.dim_block_embed):
             config.dim_block_embed = np.full(n_block, config.dim_block_embed, dtype=np.int32)
@@ -100,6 +105,14 @@ class scVAEIT():
         if config.beta_modal is None:
             config.beta_modal = np.ones(n_modal, dtype=np.float32)
 
+        if config.max_vals is None:
+            config.max_vals = tf.constant(tf.reduce_max(tf.math.abs(self.data)), shape=self.data.shape[1], dtype=tf.keras.backend.floatx())
+        elif np.isscalar(config.max_vals):
+            config.max_vals = tf.constant(config.max_vals, shape=self.data.shape[1], dtype=tf.keras.backend.floatx())
+        else:
+            config.max_vals = tf.convert_to_tensor(config.max_vals, dtype=tf.keras.backend.floatx())
+            # config.max_vals = tf.reduce_max(tf.math.abs(self.data), axis=0)
+        
         self.config = config
 
         # preprocess batch
@@ -127,8 +140,9 @@ class scVAEIT():
             self.full_masks = False
         
         self.reset()
+        print(self.config, self.masks.shape, self.data.shape, self.batches.shape)
         
-        
+
     def reset(self):
         train.clear_session()
         if hasattr(self, 'vae'):
@@ -213,11 +227,11 @@ class scVAEIT():
         if num_step_per_epoch is None:
             num_step_per_epoch = len(id_train)//batch_size+1
             
-        checkpoint_dir = 'checkpoint/pretrain/' if checkpoint_dir is None else checkpoint_dir
-        if delete_existing and tf.io.gfile.exists(checkpoint_dir):
-            print("Deleting old log directory at {}".format(checkpoint_dir))
-            tf.io.gfile.rmtree(checkpoint_dir)
-        tf.io.gfile.makedirs(checkpoint_dir)
+        if checkpoint_dir is not None:        
+            if delete_existing and tf.io.gfile.exists(checkpoint_dir):
+                print("Deleting old log directory at {}".format(checkpoint_dir))
+                tf.io.gfile.rmtree(checkpoint_dir)
+            tf.io.gfile.makedirs(checkpoint_dir)
         
         self.vae, hist = train.train(
             self.dataset_train,
@@ -252,12 +266,6 @@ class scVAEIT():
         checkpoint = tf.train.Checkpoint(net=self.vae)
         status = checkpoint.restore(path_to_weights)
         print("Loaded checkpoint: {}".format(status))
-    
-        
-    def update_z(self, masks=None, batch_size_inference=512):
-        self.z = self.get_latent_z(masks, batch_size_inference)
-        self.adata = sc.AnnData(self.z)
-        sc.pp.neighbors(self.adata)
 
             
     def get_latent_z(self, masks=None, batch_size_inference=512):
@@ -273,16 +281,22 @@ class scVAEIT():
                     self.data, self.batches, self.id_dataset
                 )).batch(batch_size_inference).prefetch(tf.data.experimental.AUTOTUNE)
 
-        return self.vae.get_z(self.dataset_full, masks)
+        return self.vae.get_z(self.dataset_full, self.full_masks, masks)
 
 
-    def get_denoised_data(self, masks=None, zero_out=True, batch_size_inference=512, L=50):
+    def get_denoised_data(self, masks=None, zero_out=True, batch_size_inference=512, return_mean=True, L=50):
         if not hasattr(self, 'dataset_full'):
             self.dataset_full = tf.data.Dataset.from_tensor_slices((
                     self.data, self.batches, self.id_dataset
                 )).batch(batch_size_inference).prefetch(tf.data.experimental.AUTOTUNE)
 
-        return self.vae.get_recon(self.dataset_full, masks, zero_out, L)
+        return self.vae.get_recon(self.dataset_full, self.full_masks, masks, zero_out, return_mean, L)
+    
+        
+    def update_z(self, masks=None, batch_size_inference=512):
+        self.z = self.get_latent_z(masks, batch_size_inference)
+        self.adata = sc.AnnData(self.z)
+        sc.pp.neighbors(self.adata)
 
     
     def visualize_latent(self, method: str = "UMAP", 

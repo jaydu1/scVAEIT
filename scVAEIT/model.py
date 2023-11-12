@@ -4,7 +4,7 @@ import tensorflow_probability as tfp
 tfd = tfp.distributions
 
 from scVAEIT.utils import ModalMaskGenerator
-from scVAEIT.nn_utils import Encoder, Decoder, LatentSpace
+from scVAEIT.nn_utils import Encoder, Decoder
 from tensorflow.keras.layers import Layer, Dense, BatchNormalization
 from tensorflow.keras.utils import Progbar
 
@@ -12,7 +12,7 @@ from tensorflow.keras.utils import Progbar
             
 class VariationalAutoEncoder(tf.keras.Model):
     """
-    Combines the encoder, decoder and LatentSpace into an end-to-end model for training and inference.
+    Combines the encoder, decoder into an end-to-end model for training and inference.
     """
     def __init__(self, config, masks, name = 'autoencoder', **kwargs):
         '''
@@ -66,9 +66,8 @@ class VariationalAutoEncoder(tf.keras.Model):
         return self.mask_generator(inputs, mask, p)
 
 
-    def call(self, x, masks, batches, L=1, training=True
-            ):
-        '''Feed forward through encoder, LatentSpace layer and decoder.
+    def call(self, x, masks, batches, L=1, training=True):
+        '''Feed forward through encoder and decoder.
 
         Parameters
         ----------
@@ -138,9 +137,11 @@ class VariationalAutoEncoder(tf.keras.Model):
         _masks = tf.where(bool_mask_in, 0., 1.)
         _x = tf.where(bool_mask_in, x, 0.)
         embed = self.embed_layer(_masks)
-        z_mean, z_log_var, z = self.encoder(_x, embed, batches, L, training=training)       
+        z_mean, z_log_var, z, x_embed = self.encoder(_x, embed, batches, L, training=training)
+        if not self.config.skip_conn:
+            x_embed = tf.zeros_like(x_embed)
         log_probs = tf.reduce_mean(
-            self.decoder(x, embed, bool_mask_out, batches, z, training=training), axis=0)
+            self.decoder(x, embed, bool_mask_out, batches, z, x_embed, training=training), axis=0)
         return z_mean, z_log_var, log_probs
     
     
@@ -153,7 +154,8 @@ class VariationalAutoEncoder(tf.keras.Model):
         return tf.reduce_mean(tf.reduce_sum(kl, axis=-1))
     
     
-    def get_recon(self, dataset_test, masks=None, zero_out=True, L=50):
+    def get_recon(self, dataset_test, full_masks, masks=None, zero_out=True, 
+                  return_mean=True, L=50):
         '''
         Compute the reconstruction of the input data.
 
@@ -161,10 +163,14 @@ class VariationalAutoEncoder(tf.keras.Model):
         ----------
         dataset_test : tf.Dataset
             Dataset containing (x, batches).
+        full_masks : boolean
+            Whether to use full masks.
         masks : np.array, optional
             The mask of input data: -1,0,1 indicate missing, observed, and masked.
         zero_out : boolean, optional
             Whether to zero out the missing values.
+        return_mean : boolean, optional
+            Whether to return the mean of posterior samples.
         L : int, optional
             The number of MC samples.
 
@@ -176,29 +182,35 @@ class VariationalAutoEncoder(tf.keras.Model):
         if masks is None:
             masks = self.masks
         x_hat = []
-        for x,b,id_data in dataset_test:
-            m = tf.gather(masks, id_data)
+        for x,b,m in dataset_test:
+            if not full_masks:
+                m = tf.gather(masks, m)
             _m = tf.where(m==0., 0., 1.)
             embed = self.embed_layer(_m)
             if zero_out:
                 x = tf.where(m==0, x, 0.)
-            _, _, z = self.encoder(x, embed, b, L, False)
-            _x_hat = tf.reduce_mean(
-                self.decoder(x, embed, tf.ones_like(m,dtype=tf.bool), 
-                    b, z, training=False, return_prob=False), axis=1)
+            _, _, z, x_embed = self.encoder(x, embed, b, L, False)
+            if not self.config.skip_conn:
+                x_embed = tf.zeros_like(x_embed)
+            _x_hat = self.decoder(x, embed, tf.ones_like(m,dtype=tf.bool), 
+                    b, z, x_embed, training=False, return_prob=False)
+            if return_mean:
+                _x_hat = tf.reduce_mean(_x_hat, axis=1)
             x_hat.append(_x_hat.numpy())
         x_hat = np.concatenate(x_hat)        
 
         return x_hat
     
     
-    def get_z(self, dataset_test, masks=None):
+    def get_z(self, dataset_test, full_masks=False, masks=None):
         '''Compute latent variables.
 
         Parameters
         ----------
         dataset_test : tf.Dataset
             Dataset containing (x, batches).
+        full_masks : boolean
+            Whether to use full masks.
         masks : np.array, optional
             The mask of input data: -1,0,1 indicate missing, observed, and masked.
 
@@ -210,11 +222,12 @@ class VariationalAutoEncoder(tf.keras.Model):
         if masks is None:
             masks = self.masks
         z_mean = []
-        for x,b,id_data in dataset_test:
-            m = tf.gather(masks, id_data)
+        for x,b,m in dataset_test:
+            if not full_masks:
+                m = tf.gather(masks, m)
             m = tf.where(m==0., 0., 1.)
             embed = self.embed_layer(m)
-            _z_mean, _, _ = self.encoder(x, embed, b, 1, False)         
+            _z_mean, _, _, _ = self.encoder(x, embed, b, 1, False)
             z_mean.append(_z_mean.numpy())
         z_mean = np.concatenate(z_mean)        
 
