@@ -3,7 +3,9 @@
 This repository contains implementations of *scVAEIT* for the paper ''*Robust probabilistic modeling for single-cell multimodal mosaic integration and imputation via scVAEIT*'' ([bioRxiv](https://doi.org/10.1101/2022.07.25.501456)).
 
 
-Check out [`example.ipynb`](https://github.com/jaydu1/scVAEIT/blob/main/example.ipynb) for illustrations of how to use *scVAEIT*.
+Check out the example folder for illustrations of how to use *scVAEIT* for
+- imputation [`integration_2modalities.ipynb`](https://github.com/jaydu1/scVAEIT/blob/main/example/integration_2modalities.ipynb)
+- integration [`integration_3modalities.ipynb`](https://github.com/jaydu1/scVAEIT/blob/main/example/integration_3modalities.ipynb)
 
 # Dependencies
 
