@@ -4,7 +4,7 @@ This repository contains implementations of *scVAEIT* for the paper ''*Robust pr
 
 
 Check out the example folder for illustrations of how to use *scVAEIT* for
-- imputation [`integration_2modalities.ipynb`](https://github.com/jaydu1/scVAEIT/blob/main/example/integration_2modalities.ipynb)
+- imputation [`integration_2modalities.ipynb`](https://github.com/jaydu1/scVAEIT/blob/main/example/imputation_2modalities.ipynb)
 - integration [`integration_3modalities.ipynb`](https://github.com/jaydu1/scVAEIT/blob/main/example/integration_3modalities.ipynb)
 
 # Dependencies
