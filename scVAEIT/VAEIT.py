@@ -18,7 +18,7 @@ import scanpy as sc
 
 
 
-class scVAEIT():
+class VAEIT():
     """
     Variational Inference for Trajectory by AutoEncoder.
     """
@@ -60,54 +60,44 @@ class scVAEIT():
         self.data = tf.convert_to_tensor(data, dtype=tf.keras.backend.floatx())
         
         # prprocessing config
-        config = {**{'beta_kl':1., # weight for beta-VAE
-                     'beta_reverse':0., # weight for reverse prediction (use masked out features to predict the observed features)
-                     'skip_conn':False, # whether to use skip connection in decoder
-                     'max_vals':None
-                    }, **config}
-        
-        if isinstance(config, dict):            
+        if np.isscalar(config['dim_input_arr']):
+            config['dim_input_arr'] = np.array([config['dim_input_arr']], dtype=np.int32)
+        n_modal = len(config['dim_input_arr'])
+        n_block = len(config['dim_block'])
+        config = dict(filter(lambda item: item[1] is not None, config.items()))
+
+
+        config = {**{
+            'beta_kl':2., # weight for beta-VAE
+            'beta_reverse':0.2, # weight for reverse prediction (use masked out features to predict the observed features)
+            'beta_modal':np.ones(n_modal, dtype=np.float32), # weight for each modality
+            'p_modal':None,
+
+            'uni_block_names':np.char.add(np.repeat('M-', n_modal), np.arange(n_modal).astype(str)),
+            'block_names':np.char.add(np.repeat('M-', n_block), np.arange(n_block).astype(str)),
+            'dist_block':np.repeat('NB', n_block),
+            'dim_block':np.array(config['dim_input_arr'], dtype=np.int32),                     
+            'dim_block_enc':np.zeros(n_block, dtype=np.int32),
+            'dim_block_dec':np.zeros(n_block, dtype=np.int32),
+
+
+            'skip_conn':False, # whether to use skip connection in decoder                     
+            'max_vals':tf.constant(tf.reduce_max(tf.math.abs(self.data)), shape=self.data.shape[1], dtype=tf.keras.backend.floatx())
+        }, **config}
+
+        if isinstance(config, dict):
             config = SimpleNamespace(**config)
 
-        if np.isscalar(config.dim_input_arr):
-            config.dim_input_arr = np.array([config.dim_input_arr], dtype=np.int32)
-        n_modal = len(config.dim_input_arr)
-        if config.uni_block_names is None:
-            config.uni_block_names = np.char.add(
-                np.repeat('M-', n_modal), np.arange(n_modal).astype(str)
-            )
         
-        if config.dim_block is None:
-            config.dim_block = np.array(config.dim_input_arr, dtype=np.int32)
-        
-        config.dimensions = check_arr_type(config.dimensions, np.int32)
-        
-        n_block = len(config.dim_block)
-        if config.dist_block is None:
-            config.dist_block = np.repeat('NB', n_block)
-        else:
-            config.dist_block = check_arr_type(config.dist_block, str)
-        if config.block_names is None:
-            config.block_names = np.char.add(
-                np.repeat('M-', n_block), np.arange(n_block).astype(str)
-            )
+        config.dimensions = check_arr_type(config.dimensions, np.int32)        
+        config.dist_block = check_arr_type(config.dist_block, str)
+
         if np.isscalar(config.dim_block_embed):
             config.dim_block_embed = np.full(n_block, config.dim_block_embed, dtype=np.int32)
-        if config.dim_block_enc is None:
-            config.dim_block_enc = np.zeros(n_block, dtype=np.int32)
-        else:
-            config.dim_block_enc = check_arr_type(config.dim_block_enc, np.int32)
-            
-        if config.dim_block_dec is None:
-            config.dim_block_dec = np.zeros(n_block, dtype=np.int32)
-        else:
-            config.dim_block_dec = check_arr_type(config.dim_block_dec, np.int32)
-        if config.beta_modal is None:
-            config.beta_modal = np.ones(n_modal, dtype=np.float32)
+        config.dim_block_enc = check_arr_type(config.dim_block_enc, np.int32)
+        config.dim_block_dec = check_arr_type(config.dim_block_dec, np.int32)
 
-        if config.max_vals is None:
-            config.max_vals = tf.constant(tf.reduce_max(tf.math.abs(self.data)), shape=self.data.shape[1], dtype=tf.keras.backend.floatx())
-        elif np.isscalar(config.max_vals):
+        if np.isscalar(config.max_vals):
             config.max_vals = tf.constant(config.max_vals, shape=self.data.shape[1], dtype=tf.keras.backend.floatx())
         else:
             config.max_vals = tf.convert_to_tensor(config.max_vals, dtype=tf.keras.backend.floatx())

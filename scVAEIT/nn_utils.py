@@ -62,43 +62,53 @@ class InputBlock(tf.keras.layers.Layer):
 
 
 
-def get_dist(dist, x_hat, mask, disp):
+def get_dist(dist, x_hat, mask, disp, max_val=10.):    
     if dist=='NB':
+        x_hat = tfp.math.clip_by_value_preserve_gradient(x_hat, -max_val, max_val)
         generative_dist = tfd.Independent(tfd.Masked(
                 tfd.NegativeBinomial.experimental_from_mean_dispersion(
-                    mean = x_hat * tf.math.log(10**4+1.), 
+                    mean = x_hat,# * tf.math.log(10**4+1.), 
                     dispersion = disp, name='NB_rv'
                 ), mask), reinterpreted_batch_ndims=1)
 
-    elif dist=='ZINB':
+    elif dist=='ZINB':        
         # Not tested in graph mode yet
         dim = tf.cast(tf.shape(x_hat)[-1]/2, tf.int32)
         phi_rna = tf.clip_by_value(x_hat[..., dim:], 1e-5, 1.-1e-5)
         x_hat = x_hat[..., :dim]
+        x_hat = tfp.math.clip_by_value_preserve_gradient(x_hat, -max_val, max_val)
         generative_dist = tfd.Independent(tfd.Masked(
             tfd.Mixture(
                 cat=tfd.Categorical(
                     probs=tf.stack([phi_rna, 1.0 - phi_rna], axis=-1)),
                 components=[tfd.Deterministic(loc=tf.zeros_like(phi_rna)), 
                             tfd.NegativeBinomial.experimental_from_mean_dispersion(
-                                mean = x_hat * tf.math.log(10**4+1.),
+                                mean = x_hat,# * tf.math.log(10**4+1.),
                                 dispersion = disp)],
                 name='ZINB_rv'
             ), mask), reinterpreted_batch_ndims=1)
 
     elif dist=='Bernoulli':
+        x_hat = tfp.math.clip_by_value_preserve_gradient(x_hat, 1e-5, 1.-1e-5)
         generative_dist = tfd.Independent(tfd.Masked(
             tfd.Bernoulli(
-                probs = tf.clip_by_value(x_hat, 1e-5, 1.-1e-5),
+                probs = x_hat,
                 dtype=tf.float32, name='Bernoulli_rv'
             ), mask), reinterpreted_batch_ndims=1)  
 
     elif dist=='Gaussian':
+        x_hat = tfp.math.clip_by_value_preserve_gradient(x_hat, -max_val, max_val)
         generative_dist = tfd.Independent(tfd.Masked(
             tfd.Normal(
                 loc = x_hat, scale = disp, name='Gaussian_rv'
             ), mask), reinterpreted_batch_ndims=1)
 
+    elif dist=='Poisson':
+        x_hat = tfp.math.clip_by_value_preserve_gradient(x_hat, -tf.inf, tf.math.log(max_val))
+        generative_dist = tfd.Independent(tfd.Masked(
+            tfd.Poisson(
+                log_rate = x_hat, name='Poisson_rv'
+            ), mask), reinterpreted_batch_ndims=1)
     return generative_dist
 
 
@@ -140,11 +150,13 @@ class OutputBlock(tf.keras.layers.Layer):
             self.bn = [BatchNormalization(center=False) for _ in range(len(dim_latents))]
         else:
             self.bn = [Lambda(lambda x,training: tf.identity(x)) for _ in range(len(dim_latents))]
-        out_act = [None if dist=='Gaussian' else tf.nn.sigmoid for dist in self.dist_outputs]
+        # out_act = [None if dist=='Gaussian' else tf.nn.sigmoid for dist in self.dist_outputs]
         self.output_layers = [
-            Dense(d, use_bias=use_bias, name=names[i], activation = out_act[i]) 
+            Dense(d, use_bias=use_bias, name=names[i]#, activation = out_act[i]
+            ) 
             for i,d in enumerate(self.dim_outputs)
-        ]        
+        ]
+        self.out_act = [tf.identity if dist in ['Gaussian', 'Poisson'] else tf.nn.softplus for dist in self.dist_outputs]
 
         self.disp = [
             Dense(d, use_bias=False, activation = tf.nn.softplus, name="disp".format(names[i])) 
@@ -153,13 +165,13 @@ class OutputBlock(tf.keras.layers.Layer):
                 for i,d in enumerate(self.dim_inputs)
         ]        
         
-        self.dists = [Lambda(lambda x: get_dist(x[0], x[1], x[2], x[3])) 
+        self.dists = [Lambda(lambda x: get_dist(x[0], x[1], x[2], x[3], x[4])) 
                       for dist in self.dist_outputs]
         self.concat = tf.keras.layers.Concatenate()
         
         
     @tf.function
-    def call(self, x, embed, masks, batches, z, x_embed, training=True):
+    def call(self, x, embed, masks, batches, z, x_embed, max_vals, training=True):
         '''
         Parameters
         ----------
@@ -177,19 +189,23 @@ class OutputBlock(tf.keras.layers.Layer):
 
         m_list = tf.split(tf.expand_dims(masks,1), self.dim_inputs, axis=-1)
         x_list = tf.split(tf.expand_dims(x,1), self.dim_inputs, axis=-1)
-        x_emded_list = tf.split(tf.expand_dims(x,1), self.dim_latents, axis=-1)
+        x_emded_list = tf.split(tf.expand_dims(x_embed,1), self.dim_latents, axis=-1)
+        max_vals = tf.split(tf.expand_dims(tf.expand_dims(max_vals,0),0), self.dim_inputs, axis=-1)
 
         L = tf.shape(z)[1]
         probs = self.concat([
             self.dists[i]([
                 self.dist_outputs[i],
-                self.output_layers[i](self.bn[i](self.linear_layers[i](
-                    z,
-                    training=training) + x_emded_list[i], training=training), training=training),
+                self.out_act[i](
+                    self.output_layers[i](self.bn[i](
+                        self.linear_layers[i](z,training=training), training=training)  
+                        + x_emded_list[i], training=training)
+                ),
                 m_list[i], 
                 tf.expand_dims(
                     tfp.math.clip_by_value_preserve_gradient(
-                    self.disp[i](batches, training=training), 0., 6.), 1)
+                    self.disp[i](batches, training=training), 0., 6.), 1),
+                max_vals[i]
             ]).log_prob(x_list[i]) for i in range(len(self.dim_latents))
         ])
 
@@ -197,21 +213,25 @@ class OutputBlock(tf.keras.layers.Layer):
 
     
     @tf.function
-    def get_recon(self, embed, masks, batches, z, x_embed, training=True):
+    def get_recon(self, embed, masks, batches, z, x_embed, max_vals, training=True):
         m_list = tf.split(tf.expand_dims(masks,1), self.dim_inputs, axis=-1)
-        x_emded_list = tf.split(tf.expand_dims(x,1), self.dim_latents, axis=-1)
+        x_emded_list = tf.split(tf.expand_dims(x_embed,1), self.dim_latents, axis=-1)
+        max_vals = tf.split(tf.expand_dims(tf.expand_dims(max_vals,0),0), self.dim_inputs, axis=-1)
 
         L = tf.shape(z)[1]
         x_hat = self.concat([
             self.dists[i]([
                 self.dist_outputs[i],
-                self.output_layers[i](self.bn[i](self.linear_layers[i](
-                    z,
-                    training=training) + x_emded_list[i], training=training), training=training), 
+                self.out_act[i](
+                    self.output_layers[i](self.bn[i](
+                        self.linear_layers[i](z, training=training), training=training)
+                        + x_emded_list[i], training=training)
+                ), 
                 m_list[i], 
                 tf.expand_dims(
                     tfp.math.clip_by_value_preserve_gradient(
-                    self.disp[i](batches, training=training), 0., 6.), 1)
+                    self.disp[i](batches, training=training), 0., 6.), 1),
+                max_vals[i]
             ]).mean() for i in range(len(self.dim_latents))
         ])
 
@@ -385,8 +405,8 @@ class Decoder(Layer):
     Decoder, model \(p(Y_i|Z_i,X_i)\).
     '''
     def __init__(self, dimensions, dim_block_outputs, 
-        dist_block_outputs, dim_block_latents, dim_embed, block_names=None,
-        name = 'decoder', **kwargs):
+        dist_block_outputs, dim_block_latents, dim_embed, max_vals,
+        block_names=None, name = 'decoder', **kwargs):
         '''
         Parameters
         ----------
@@ -398,8 +418,12 @@ class Decoder(Layer):
             (B,) `'NB'`, `'ZINB'`, `'Bernoulli'` or `'Gaussian'`.
         dim_block_latents : list of int
             (B,) The dimension of output of last layer for each block.
+        dim_embed : int
+            The dimension of the embedding layer.
+        max_vals : np.array
+            The maximum values of the outputs.
         block_names : list of str, optional
-            (B,) The name of last layer for each block.        
+            (B,) The name of last layer for each block.
         name : str, optional
             The name of the layer.
         '''
@@ -412,6 +436,7 @@ class Decoder(Layer):
                              for (i,dim) in enumerate(dimensions)]
         self.batch_norm_layers = [BatchNormalization(center=False) \
                                     for _ in range(len((dimensions)))]
+        self.max_vals = max_vals
 
        
     @tf.function
@@ -441,9 +466,9 @@ class Decoder(Layer):
             _z = bn(_z, training=training)
 
         if return_prob:
-            log_probs = self.output_layer(x, embed, masks, batches, _z, x_embed, training=training)
+            log_probs = self.output_layer(x, embed, masks, batches, _z, x_embed, self.max_vals, training=training)
             return log_probs
         else:
-            x_hat = self.output_layer.get_recon(embed, masks, batches, _z, x_embed, training=training)
+            x_hat = self.output_layer.get_recon(embed, masks, batches, _z, x_embed, self.max_vals, training=training)
             return x_hat
 

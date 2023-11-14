@@ -46,7 +46,8 @@ class VariationalAutoEncoder(tf.keras.Model):
         self.encoder = Encoder(self.config.dimensions, self.config.dim_latent,
             self.config.dim_block, self.config.dim_block_enc, self.config.dim_block_embed, self.config.block_names)
         self.decoder = Decoder(self.config.dimensions[::-1], self.config.dim_block,
-            self.config.dist_block, self.config.dim_block_dec, self.config.dim_block_embed, self.config.block_names)
+            self.config.dist_block, self.config.dim_block_dec, self.config.dim_block_embed, 
+            self.config.max_vals, self.config.block_names)
         
         self.mask_generator = ModalMaskGenerator(
             config.dim_input_arr, config.p_feat, config.p_modal)
