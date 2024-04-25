@@ -19,11 +19,13 @@ mamba install -c conda-forge "tensorflow>=2.12" "tensorflow-probability>=0.12" p
 mamba install -c conda-forge "scanpy>=1.9.2" matplotlib scikit-learn -y
 ```
 
-If you are using `conda`, simply replace `mamba` above by `conda`.
+If you are using `conda,` simply replace `mamba` above with `conda.`
 
 
 # Reproducibility Materials
-The code for reproducing results in the paper can be found at the folder `Reproducibility materials`.
+The code for reproducing results in the paper can be found in the folder `Reproducibility materials`.
+The large preprocessed dataset that contains DOGMA-seq, CITE-seq, and ASAP-seq data from GSE156478 can be accessed through [Google Drive](https://drive.google.com/drive/folders/19bzIGKex9Cwoy3ZWXra6D2hvqDtZOvfB?usp=drive_link).
+
 
 # Parameters
 ## Network parameters
@@ -38,7 +40,7 @@ We explain the parameters as below:
 
 - `dim_block` represents the number of subconnected features in all modalities (assuming that the features have been rearranged accordingly). In the example, it is $[n_g, n_a, n_p^1, n_p^2, \ldots]$. 
 
-- `dist_block`: There are four distributions implemented: 'NB', 'ZINB', 'Bernoulli', 'Gaussian' for negative binomial, zero-inflated negative binomial, Bernoulli, and Gaussian, respectively. However, only 'NB' and 'Bernoulli' are tested and used to generate the results in the paper. 'Bernoulli' is used for ATAC-seq data, and 'NB' is used for genes and proteins.
+- `dist_block`: There are four distributions implemented: 'NB', 'ZINB', 'Bernoulli', 'Gaussian' for negative binomial, zero-inflated negative binomial, Bernoulli, and Gaussian, respectively. However, only 'NB' and 'Bernoulli' were tested and used to generate the results for the paper. 'Bernoulli' is used for ATAC-seq data, and 'NB' is used for genes and proteins.
 
 - `dim_block_embed` represents the embedding dimension of the binary mask. For example, `dim_block_embed = [1, 2, 3, ...]` means the mask will be embedded into a continuous vector of dimension 1 for block 1,  and so on.
 
