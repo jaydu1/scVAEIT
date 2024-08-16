@@ -29,17 +29,17 @@ class InputBlock(tf.keras.layers.Layer):
         '''
         super(InputBlock, self).__init__()
                 
-        self.dim_inputs = dim_inputs
-        self.dim_embed = dim_embed
+        self.dim_inputs = tf.constant(dim_inputs, dtype=tf.int32)
+        self.dim_embed = tf.constant(dim_embed, dtype=tf.int32)
         if names is None:
             names = ['Block_{}'.format(i) for i in range(len(dim_latents))]
         self.names = names
         self.dim_latents = dim_latents
         
         self.linear_layers = [
-            Dense(d, use_bias=False, activation = LeakyReLU(), name=names[i]) if d>0 else 
+            Dense(d, use_bias=use_bias, activation = LeakyReLU(), name=names[i]) if d>0 else 
             tf.keras.layers.Lambda(lambda x,training: tf.identity(x))
-                for i,d in enumerate(self.dim_latents)
+                for i,d in enumerate(dim_latents)
         ]
         if bn:
             self.bn = BatchNormalization(center=False)
@@ -48,7 +48,7 @@ class InputBlock(tf.keras.layers.Layer):
         self.concat = tf.keras.layers.Concatenate()
         
 
-    @tf.function
+    @tf.function(reduce_retracing=True)
     def call(self, x, embed, batches, training=True):
         x_list = tf.split(x, self.dim_inputs, axis=1)
         embed_list = tf.split(embed, self.dim_embed, axis=1)
@@ -62,59 +62,39 @@ class InputBlock(tf.keras.layers.Layer):
 
 
 
-def get_dist(dist, x_hat, mask, disp, max_val=10.):    
+
+def get_dist(dist, max_val):
     if dist=='NB':
-        x_hat = tfp.math.clip_by_value_preserve_gradient(x_hat, -max_val, max_val)
-        generative_dist = tfd.Independent(tfd.Masked(
+        generative_dist = lambda x_hat, disp, mask: tfd.Independent(tfd.Masked(
                 tfd.NegativeBinomial.experimental_from_mean_dispersion(
-                    mean = x_hat,# * tf.math.log(10**4+1.), 
+                    mean = tfp.math.clip_by_value_preserve_gradient(x_hat, -max_val, max_val), 
                     dispersion = disp, name='NB_rv'
                 ), mask), reinterpreted_batch_ndims=1)
 
-    elif dist=='ZINB':        
-        # Not tested in graph mode yet
-        dim = tf.cast(tf.shape(x_hat)[-1]/2, tf.int32)
-        phi_rna = tf.clip_by_value(x_hat[..., dim:], 1e-5, 1.-1e-5)
-        x_hat = x_hat[..., :dim]
-        x_hat = tfp.math.clip_by_value_preserve_gradient(x_hat, -max_val, max_val)
-        generative_dist = tfd.Independent(tfd.Masked(
-            tfd.Mixture(
-                cat=tfd.Categorical(
-                    probs=tf.stack([phi_rna, 1.0 - phi_rna], axis=-1)),
-                components=[tfd.Deterministic(loc=tf.zeros_like(phi_rna)), 
-                            tfd.NegativeBinomial.experimental_from_mean_dispersion(
-                                mean = x_hat,# * tf.math.log(10**4+1.),
-                                dispersion = disp)],
-                name='ZINB_rv'
-            ), mask), reinterpreted_batch_ndims=1)
-
     elif dist=='Bernoulli':
-        x_hat = tfp.math.clip_by_value_preserve_gradient(x_hat, 1e-5, 1.-1e-5)
-        generative_dist = tfd.Independent(tfd.Masked(
+        generative_dist = lambda x_hat, disp, mask: tfd.Independent(tfd.Masked(
             tfd.Bernoulli(
-                probs = x_hat,
+                probs = tfp.math.clip_by_value_preserve_gradient(x_hat, tf.constant(1e-5), tf.constant(1.-1e-5)),
                 dtype=tf.float32, name='Bernoulli_rv'
-            ), mask), reinterpreted_batch_ndims=1)  
-
-    elif dist=='Gaussian':
-        x_hat = tfp.math.clip_by_value_preserve_gradient(x_hat, -max_val, max_val)
-        generative_dist = tfd.Independent(tfd.Masked(
-            tfd.Normal(
-                loc = x_hat, scale = disp, name='Gaussian_rv'
             ), mask), reinterpreted_batch_ndims=1)
-
+    elif dist=='Gaussian':
+        generative_dist = lambda x_hat, disp, mask: tfd.Independent(tfd.Masked(
+            tfd.Normal(
+                loc = tfp.math.clip_by_value_preserve_gradient(x_hat, -max_val, max_val), 
+                scale = disp, name='Gaussian_rv'
+            ), mask), reinterpreted_batch_ndims=1)
     elif dist=='Poisson':
-        x_hat = tfp.math.clip_by_value_preserve_gradient(x_hat, -tf.inf, tf.math.log(max_val))
-        generative_dist = tfd.Independent(tfd.Masked(
+        generative_dist = lambda x_hat, disp, mask: tfd.Independent(tfd.Masked(
             tfd.Poisson(
-                log_rate = x_hat, name='Poisson_rv'
+                log_rate = tfp.math.clip_by_value_preserve_gradient(x_hat, -tf.math.inf, tf.math.log(max_val)), 
+                name='Poisson_rv'
             ), mask), reinterpreted_batch_ndims=1)
     return generative_dist
-
+    
 
 
 class OutputBlock(tf.keras.layers.Layer):
-    def __init__(self, dim_outputs, dist_outputs, dim_latents, dim_embed, names=None, bn=True, **kwargs):
+    def __init__(self, dim_outputs, dist_outputs, dim_latents, dim_embed, max_val, names=None, bn=True, **kwargs):
         '''
         Parameters
         ----------
@@ -132,11 +112,11 @@ class OutputBlock(tf.keras.layers.Layer):
             Extra keyword arguments.
         '''        
         super(OutputBlock, self).__init__()
-        self.dim_inputs = dim_outputs
-        self.dim_embed = dim_embed
-        self.dim_outputs = [d*2 if dist_outputs[i]=='ZINB' else d for i,d in enumerate(dim_outputs)]
-        self.dist_outputs = dist_outputs
-        self.dim_latents = dim_latents
+        self.dim_inputs = tf.constant(dim_outputs, dtype=tf.int32)
+        self.dim_embed = tf.constant(dim_embed, dtype=tf.int32)
+        self.dim_outputs = tf.constant([d*2 if dist_outputs[i]=='ZINB' else d for i,d in enumerate(dim_outputs)], dtype=tf.int32)
+        self.dist_outputs = dist_outputs#tf.constant(dist_outputs, dtype=tf.string)
+        self.dim_latents = tf.constant(dim_latents, dtype=tf.int32)
         if names is None:
             names = ['Block_{}'.format(i) for i in range(len(dim_latents))]
         self.names = names        
@@ -150,28 +130,22 @@ class OutputBlock(tf.keras.layers.Layer):
             self.bn = [BatchNormalization(center=False) for _ in range(len(dim_latents))]
         else:
             self.bn = [Lambda(lambda x,training: tf.identity(x)) for _ in range(len(dim_latents))]
-        # out_act = [None if dist=='Gaussian' else tf.nn.sigmoid for dist in self.dist_outputs]
-        self.output_layers = [
-            Dense(d, use_bias=use_bias, name=names[i]#, activation = out_act[i]
-            ) 
-            for i,d in enumerate(self.dim_outputs)
-        ]
+        self.output_layers = [Dense(d, use_bias=use_bias, name=names[i]) for i,d in enumerate(self.dim_outputs)]
         self.out_act = [tf.identity if dist in ['Gaussian', 'Poisson'] else tf.nn.softplus for dist in self.dist_outputs]
 
         self.disp = [
-            Dense(d, use_bias=False, activation = tf.nn.softplus, name="disp".format(names[i])) 
+            Dense(d, use_bias=use_bias, activation = tf.nn.softplus, name="disp".format(names[i])) 
             if self.dist_outputs[i]!='Bernoulli' else 
             Lambda(lambda x,training: tf.zeros((1,d), dtype=tf.float32))
-                for i,d in enumerate(self.dim_inputs)
+                for i,d in enumerate(dim_outputs)
         ]        
         
-        self.dists = [Lambda(lambda x: get_dist(x[0], x[1], x[2], x[3], x[4])) 
-                      for dist in self.dist_outputs]
+        self.dists = [get_dist(dist, max_val) for dist in self.dist_outputs]
         self.concat = tf.keras.layers.Concatenate()
         
         
-    @tf.function
-    def call(self, x, embed, masks, batches, z, x_embed, max_vals, training=True):
+    @tf.function(reduce_retracing=True)
+    def call(self, x, embed, masks, batches, z, x_embed, training=True):
         '''
         Parameters
         ----------
@@ -190,49 +164,43 @@ class OutputBlock(tf.keras.layers.Layer):
         m_list = tf.split(tf.expand_dims(masks,1), self.dim_inputs, axis=-1)
         x_list = tf.split(tf.expand_dims(x,1), self.dim_inputs, axis=-1)
         x_emded_list = tf.split(tf.expand_dims(x_embed,1), self.dim_latents, axis=-1)
-        max_vals = tf.split(tf.expand_dims(tf.expand_dims(max_vals,0),0), self.dim_inputs, axis=-1)
 
         L = tf.shape(z)[1]
         probs = self.concat([
-            self.dists[i]([
-                self.dist_outputs[i],
+            self.dists[i](
                 self.out_act[i](
                     self.output_layers[i](self.bn[i](
                         self.linear_layers[i](z,training=training), training=training)  
                         + x_emded_list[i], training=training)
-                ),
-                m_list[i], 
+                ),                
                 tf.expand_dims(
                     tfp.math.clip_by_value_preserve_gradient(
                     self.disp[i](batches, training=training), 0., 6.), 1),
-                max_vals[i]
-            ]).log_prob(x_list[i]) for i in range(len(self.dim_latents))
+                m_list[i]
+            ).log_prob(x_list[i]) for i in range(len(self.dim_latents))
         ])
 
         return probs
 
     
-    @tf.function
-    def get_recon(self, embed, masks, batches, z, x_embed, max_vals, training=True):
+    @tf.function(reduce_retracing=True)
+    def get_recon(self, embed, masks, batches, z, x_embed, training=True):
         m_list = tf.split(tf.expand_dims(masks,1), self.dim_inputs, axis=-1)
         x_emded_list = tf.split(tf.expand_dims(x_embed,1), self.dim_latents, axis=-1)
-        max_vals = tf.split(tf.expand_dims(tf.expand_dims(max_vals,0),0), self.dim_inputs, axis=-1)
 
         L = tf.shape(z)[1]
         x_hat = self.concat([
-            self.dists[i]([
-                self.dist_outputs[i],
+            self.dists[i](
                 self.out_act[i](
                     self.output_layers[i](self.bn[i](
                         self.linear_layers[i](z, training=training), training=training)
                         + x_emded_list[i], training=training)
-                ), 
-                m_list[i], 
+                ),                 
                 tf.expand_dims(
                     tfp.math.clip_by_value_preserve_gradient(
                     self.disp[i](batches, training=training), 0., 6.), 1),
-                max_vals[i]
-            ]).mean() for i in range(len(self.dim_latents))
+                m_list[i]
+            ).mean() for i in range(len(self.dim_latents))
         ])
 
         return x_hat
@@ -243,45 +211,6 @@ class OutputBlock(tf.keras.layers.Layer):
 # Sampling layers in the latent space
 #
 ###########################################################################
-class cdf_layer(Layer):
-    '''
-    The Normal cdf layer with custom gradients.
-    '''
-    def __init__(self):
-        '''
-        '''
-        super(cdf_layer, self).__init__()
-        
-    @tf.function
-    def call(self, x):
-        return self.func(x)
-        
-    @tf.custom_gradient
-    def func(self, x):
-        '''Return cdf(x) and pdf(x).
-
-        Parameters
-        ----------
-        x : tf.Tensor
-            The input tensor.
-        
-        Returns
-        ----------
-        f : tf.Tensor
-            cdf(x).
-        grad : tf.Tensor
-            pdf(x).
-        '''   
-        dist = tfp.distributions.Normal(
-            loc = tf.constant(0.0, tf.keras.backend.floatx()), 
-            scale = tf.constant(1.0, tf.keras.backend.floatx()), 
-            allow_nan_stats=False)
-        f = dist.cdf(x)
-        def grad(dy):
-            gradient = dist.prob(x)
-            return dy * gradient
-        return f, grad
-    
 
 class Sampling(Layer):
     """Sampling latent variable \(z\) from \(N(\\mu_z, \\log \\sigma_z^2\)).    
@@ -291,7 +220,7 @@ class Sampling(Layer):
         super(Sampling, self).__init__(**kwargs)
         self.seed = seed
 
-    @tf.function
+    @tf.function(reduce_retracing=True)
     def call(self, z_mean, z_log_var):
         '''Return cdf(x) and pdf(x).
 
@@ -307,8 +236,6 @@ class Sampling(Layer):
         z : tf.Tensor
             \([B, L, d]\) The sampled \(z\).
         '''   
-   #     seed = tfp.util.SeedStream(self.seed, salt="random_normal")
-   #     epsilon = tf.random.normal(shape = tf.shape(z_mean), seed=seed(), dtype=tf.keras.backend.floatx())
         epsilon = tf.random.normal(shape = tf.shape(z_mean), dtype=tf.keras.backend.floatx())
         z = z_mean + tf.exp(0.5 * z_log_var) * epsilon
         z = tf.clip_by_value(z, -1e6, 1e6)
@@ -359,7 +286,7 @@ class Encoder(Layer):
         self.sampling = Sampling()
     
     
-    @tf.function
+    @tf.function(reduce_retracing=True)
     def call(self, x, embed, batches, L=1, training=True):
         '''Encode the inputs and get the latent variables.
 
@@ -429,7 +356,7 @@ class Decoder(Layer):
         '''
         super(Decoder, self).__init__(name = name, **kwargs)
         self.output_layer = OutputBlock(
-            dim_block_outputs, dist_block_outputs, dim_block_latents, dim_embed, block_names, bn=False)
+            dim_block_outputs, dist_block_outputs, dim_block_latents, dim_embed, max_vals, block_names, bn=False)
 
         self.dense_layers = [Dense(dim, activation = LeakyReLU(),
                                           name = 'decoder_%i'%(i+1)) \
@@ -438,8 +365,8 @@ class Decoder(Layer):
                                     for _ in range(len((dimensions)))]
         self.max_vals = max_vals
 
-       
-    @tf.function
+
+    @tf.function(reduce_retracing=True)
     def call(self, x, embed, masks, batches, z, x_embed, training=True, return_prob=True):
         '''Decode the latent variables and get the reconstructions.
 
@@ -458,17 +385,17 @@ class Decoder(Layer):
         L = tf.shape(z)[1]
         _z = tf.concat([
             z, 
-            # tf.tile(tf.expand_dims(tf.concat([embed,batches], axis=-1), 1), (1,L,1))
-            tf.tile(tf.expand_dims(batches, 1), (1,L,1))
+            tf.tile(tf.expand_dims(tf.concat([embed,batches], axis=-1), 1), (1,L,1))
+            # tf.tile(tf.expand_dims(batches, 1), (1,L,1))
         ], axis=-1)
         for dense, bn in zip(self.dense_layers, self.batch_norm_layers):
             _z = dense(_z)
             _z = bn(_z, training=training)
 
         if return_prob:
-            log_probs = self.output_layer(x, embed, masks, batches, _z, x_embed, self.max_vals, training=training)
+            log_probs = self.output_layer(x, embed, masks, batches, _z, x_embed, training=training)
             return log_probs
         else:
-            x_hat = self.output_layer.get_recon(embed, masks, batches, _z, x_embed, self.max_vals, training=training)
+            x_hat = self.output_layer.get_recon(embed, masks, batches, _z, x_embed, training=training)
             return x_hat
 

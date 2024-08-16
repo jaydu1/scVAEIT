@@ -8,6 +8,7 @@ from scVAEIT.nn_utils import Encoder, Decoder
 from tensorflow.keras.layers import Layer, Dense, BatchNormalization
 from tensorflow.keras.utils import Progbar
 
+from tensorflow.keras import backend as K
             
             
 class VariationalAutoEncoder(tf.keras.Model):
@@ -67,7 +68,7 @@ class VariationalAutoEncoder(tf.keras.Model):
         return self.mask_generator(inputs, mask, p)
 
 
-    def call(self, x, masks, batches, L=1, training=True):
+    def call(self, x, masks, batches, conditions = None, gamma = 0., L=1, training=True):
         '''Feed forward through encoder and decoder.
 
         Parameters
@@ -93,9 +94,10 @@ class VariationalAutoEncoder(tf.keras.Model):
             x, masks!=-1., masks!=-1., batches, L, training=training)
         z_mean_unobs_1, z_log_var_unobs_1, log_probs_unobs = self._get_reconstruction_loss(
             x, masks==0., masks==1., batches, L, training=training)
-        z_mean_unobs_2, z_log_var_unobs_2, log_probs_ = self._get_reconstruction_loss(
-            x, masks==1., masks==0., batches, L, training=training)
-        log_probs_unobs = (1-self.config.beta_reverse) * log_probs_unobs + self.config.beta_reverse*log_probs_
+        if self.config.beta_reverse>0:
+            z_mean_unobs_2, z_log_var_unobs_2, log_probs_ = self._get_reconstruction_loss(
+                x, masks==1., masks==0., batches, L, training=training)            
+            log_probs_unobs = (1-self.config.beta_reverse) * log_probs_unobs + self.config.beta_reverse*log_probs_
         
         self.add_loss(
             [- (1-self.config.beta_unobs) * 
@@ -108,16 +110,24 @@ class VariationalAutoEncoder(tf.keras.Model):
              self.config.beta_modal[i] for i,name in enumerate(self.config.uni_block_names)]
         )
         
-        kl = (1-self.config.beta_reverse) * self._get_kl_normal(
-            z_mean_unobs_1, z_log_var_unobs_1, z_mean_obs, z_log_var_obs) + \
-            self.config.beta_reverse * self._get_kl_normal(
+        kl = self._get_kl_normal(
+                z_mean_unobs_1, z_log_var_unobs_1, z_mean_obs, z_log_var_obs)
+        if self.config.beta_reverse > 0:
+            kl = (1-self.config.beta_reverse) * kl + \
+                self.config.beta_reverse * self._get_kl_normal(
             z_mean_unobs_2, z_log_var_unobs_2, z_mean_obs, z_log_var_obs)
         self.add_loss(self.config.beta_kl * kl)
 
+        
+        if gamma == 0.:
+            mmd_loss = tf.constant(0.0, dtype=tf.keras.backend.floatx())
+        else:
+            mmd_loss = self._get_total_mmd_loss(conditions, z_mean_obs, tf.constant(gamma, dtype=tf.keras.backend.floatx()))
+        self.add_loss(mmd_loss)
         return self.losses
     
 
-    @tf.function
+    @tf.function(reduce_retracing=True)
     def _get_reconstruction_loss(self, x, bool_mask_in, bool_mask_out, batches, L, training=True):
         '''
         Parameters
@@ -138,7 +148,7 @@ class VariationalAutoEncoder(tf.keras.Model):
         _masks = tf.where(bool_mask_in, 0., 1.)
         _x = tf.where(bool_mask_in, x, 0.)
         embed = self.embed_layer(_masks)
-        z_mean, z_log_var, z, x_embed = self.encoder(_x, embed, batches, L, training=training)
+        z_mean, z_log_var, z, x_embed = self.encoder(_x, embed, batches, L=L, training=training)
         if not self.config.skip_conn:
             x_embed = tf.zeros_like(x_embed)
         log_probs = tf.reduce_mean(
@@ -146,7 +156,7 @@ class VariationalAutoEncoder(tf.keras.Model):
         return z_mean, z_log_var, log_probs
     
     
-    @tf.function
+    @tf.function(reduce_retracing=True)
     def _get_kl_normal(self, mu_0, log_var_0, mu_1, log_var_1):
         kl = 0.5 * (
             tf.exp(tf.clip_by_value(log_var_0-log_var_1, -6., 6.)) + 
@@ -183,14 +193,15 @@ class VariationalAutoEncoder(tf.keras.Model):
         if masks is None:
             masks = self.masks
         x_hat = []
-        for x,b,m in dataset_test:
+        idx = []
+        for x,b,m,_idx in dataset_test:
             if not full_masks:
                 m = tf.gather(masks, m)
             _m = tf.where(m==0., 0., 1.)
             embed = self.embed_layer(_m)
             if zero_out:
                 x = tf.where(m==0, x, 0.)
-            _, _, z, x_embed = self.encoder(x, embed, b, L, False)
+            _, _, z, x_embed = self.encoder(x, embed, b, L=L, training=False)
             if not self.config.skip_conn:
                 x_embed = tf.zeros_like(x_embed)
             _x_hat = self.decoder(x, embed, tf.ones_like(m,dtype=tf.bool), 
@@ -198,12 +209,14 @@ class VariationalAutoEncoder(tf.keras.Model):
             if return_mean:
                 _x_hat = tf.reduce_mean(_x_hat, axis=1)
             x_hat.append(_x_hat.numpy())
-        x_hat = np.concatenate(x_hat)        
+            idx.append(_idx.numpy())
+        idx = np.concatenate(idx)
+        x_hat = np.concatenate(x_hat)[np.argsort(idx)]     
 
         return x_hat
     
     
-    def get_z(self, dataset_test, full_masks=False, masks=None):
+    def get_z(self, dataset_test, full_masks=False, masks=None, zero_out=True):
         '''Compute latent variables.
 
         Parameters
@@ -214,6 +227,8 @@ class VariationalAutoEncoder(tf.keras.Model):
             Whether to use full masks.
         masks : np.array, optional
             The mask of input data: -1,0,1 indicate missing, observed, and masked.
+        zero_out : boolean, optional
+            Whether to zero out the missing values.
 
         Returns
         ----------
@@ -223,16 +238,156 @@ class VariationalAutoEncoder(tf.keras.Model):
         if masks is None:
             masks = self.masks
         z_mean = []
-        for x,b,m in dataset_test:
+        idx = []
+        for x,b,m,_idx in dataset_test:
             if not full_masks:
                 m = tf.gather(masks, m)
             m = tf.where(m==0., 0., 1.)
+            if zero_out:
+                x = tf.where(m==0, x, 0.)
             embed = self.embed_layer(m)
-            _z_mean, _, _, _ = self.encoder(x, embed, b, 1, False)
+            _z_mean, _, _, _ = self.encoder(x, embed, b, L=1, training=False)
             z_mean.append(_z_mean.numpy())
-        z_mean = np.concatenate(z_mean)        
+            idx.append(_idx.numpy())
+        idx = np.concatenate(idx)
+        z_mean = np.concatenate(z_mean)[np.argsort(idx)]
 
         return z_mean
 
 
     
+    def _get_total_mmd_loss(self, conditions, z, gamma):
+        mmd_loss = tf.constant(0.0, dtype=tf.keras.backend.floatx())
+        
+        n_group = conditions.shape[1]
+
+        for i in range(n_group):
+            sub_conditions = conditions[:, i]
+            n_sub_group = tf.unique(sub_conditions)[0].shape[0]
+            cond = (sub_conditions != tf.constant(0, dtype=tf.int32))
+            z_cond = tf.boolean_mask(z, cond)
+            sub_conditions = tf.boolean_mask(sub_conditions, cond) - 1
+
+            if (n_sub_group == 1) | (n_sub_group == 0):
+                _loss = tf.constant(0.0, dtype=tf.keras.backend.floatx())
+            else:
+                _loss = self._mmd_loss(y_true=sub_conditions, y_pred=z_cond, gamma=gamma,
+                                       n_conditions=n_sub_group, kernel_method='multi-scale-rbf')
+            mmd_loss = mmd_loss + _loss
+        return mmd_loss
+
+    # each loop the input shape is changed. Can not use @tf.function
+    # tf graph requires static shape and tensor dtype
+    def _mmd_loss(self, y_true, y_pred, gamma, n_conditions, kernel_method='multi-scale-rbf'):
+        conditions_mmd = tf.dynamic_partition(y_pred, y_true, num_partitions=n_conditions)
+        loss = tf.constant(0.0, dtype=tf.keras.backend.floatx())
+        for i in range(len(conditions_mmd)):
+            for j in range(i):
+                if conditions_mmd[i].shape[0]>0 and conditions_mmd[j].shape[0]>0:
+                    loss += _nan2zero(compute_mmd(conditions_mmd[i], conditions_mmd[j], kernel_method))
+
+        return gamma * loss
+    
+    
+    
+    
+    
+# Below are some functions used in calculating MMD loss
+
+def compute_kernel(x, y, kernel='rbf', **kwargs):
+    """Computes RBF kernel between x and y.
+
+    Parameters
+    ----------
+        x: Tensor
+            Tensor with shape [batch_size, z_dim]
+        y: Tensor
+            Tensor with shape [batch_size, z_dim]
+
+    Returns
+    ----------
+        The computed RBF kernel between x and y
+    """
+    scales = kwargs.get("scales", [])
+    if kernel == "rbf":
+        x_size = K.shape(x)[0]
+        y_size = K.shape(y)[0]
+        dim = K.shape(x)[1]
+        tiled_x = K.tile(K.reshape(x, K.stack([x_size, 1, dim])), K.stack([1, y_size, 1]))
+        tiled_y = K.tile(K.reshape(y, K.stack([1, y_size, dim])), K.stack([x_size, 1, 1]))
+        return K.exp(-K.mean(K.square(tiled_x - tiled_y), axis=2) / K.cast(dim, tf.float32))
+    elif kernel == 'raphy':
+        scales = K.variable(value=np.asarray(scales))
+        squared_dist = K.expand_dims(squared_distance(x, y), 0)
+        scales = K.expand_dims(K.expand_dims(scales, -1), -1)
+        weights = K.eval(K.shape(scales)[0])
+        weights = K.variable(value=np.asarray(weights))
+        weights = K.expand_dims(K.expand_dims(weights, -1), -1)
+        return K.sum(weights * K.exp(-squared_dist / (K.pow(scales, 2))), 0)
+    elif kernel == "multi-scale-rbf":
+        sigmas = [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1, 5, 10, 15, 20, 25, 30, 35, 100, 1e3, 1e4, 1e5, 1e6]
+
+        beta = 1. / (2. * (K.expand_dims(sigmas, 1)))
+        distances = squared_distance(x, y)
+        s = K.dot(beta, K.reshape(distances, (1, -1)))
+
+        return K.reshape(tf.reduce_sum(input_tensor=tf.exp(-s), axis=0), K.shape(distances)) / len(sigmas)
+
+
+def squared_distance(x, y):
+    '''Compute the pairwise euclidean distance.
+
+    Parameters
+    ----------
+    x: Tensor
+        Tensor with shape [batch_size, z_dim]
+    y: Tensor
+        Tensor with shape [batch_size, z_dim]
+
+    Returns
+    ----------
+    The pairwise euclidean distance between x and y.
+    '''
+    r = K.expand_dims(x, axis=1)
+    return K.sum(K.square(r - y), axis=-1)
+
+
+def compute_mmd(x, y, kernel, **kwargs):
+    """Computes Maximum Mean Discrepancy(MMD) between x and y.
+    
+    Parameters
+    ----------
+    x: Tensor
+        Tensor with shape [batch_size, z_dim]
+    y: Tensor
+        Tensor with shape [batch_size, z_dim]
+    kernel: str
+        The kernel type used in MMD. It can be 'rbf', 'multi-scale-rbf' or 'raphy'.
+    **kwargs: dict
+        The parameters used in kernel function.
+    
+    Returns
+    ----------
+    The computed MMD between x and y
+    """
+    x_kernel = compute_kernel(x, x, kernel=kernel, **kwargs)
+    y_kernel = compute_kernel(y, y, kernel=kernel, **kwargs)
+    xy_kernel = compute_kernel(x, y, kernel=kernel, **kwargs)
+    return K.mean(x_kernel) + K.mean(y_kernel) - 2 * K.mean(xy_kernel)
+
+
+
+def _nan2zero(x):
+    return tf.where(tf.math.is_nan(x), tf.zeros_like(x), x)
+
+def _nan2inf(x):
+    return tf.where(tf.math.is_nan(x), tf.zeros_like(x) + np.inf, x)
+
+def _nelem(x):
+    nelem = tf.reduce_sum(input_tensor=tf.cast(~tf.math.is_nan(x), tf.float32))
+    return tf.cast(tf.compat.v1.where(tf.equal(nelem, 0.), 1., nelem), x.dtype)
+
+def _reduce_mean(x):
+    nelem = _nelem(x)
+    x = _nan2zero(x)
+    return tf.divide(tf.reduce_sum(input_tensor=x), nelem)

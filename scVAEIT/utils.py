@@ -2,6 +2,7 @@ import os
 import random
 import numpy as np
 import tensorflow as tf
+import tensorflow_probability as tfp
 
 
 
@@ -68,42 +69,85 @@ class FixedGenerator(object):
     
 class ModalMaskGenerator(object):
     def __init__(self, dim_arr, p_feat=0.05, p_modal=None):
-        self.p_feat = p_feat
-        self.dim_arr = dim_arr
-        self.segment_ids = np.repeat(np.arange(len(dim_arr)), dim_arr)
+        self.p_feat = tf.constant(p_feat, dtype=tf.keras.backend.floatx())
+        self.dim_arr = tf.constant(dim_arr)
+        self.segment_ids = tf.constant(np.repeat(np.arange(len(dim_arr)), dim_arr), dtype=tf.int32)
         if p_modal is None:
             p_modal = np.array(dim_arr, dtype=float)
             p_modal /= np.sum(p_modal)
-        self.p_modal = p_modal
+        self.p_modal = tf.constant(p_modal, dtype=tf.keras.backend.floatx())
 
+    @tf.function(reduce_retracing=True)
     def __call__(self, inputs, missing_mask=None, p=None):
         if p is None:
             p = self.p_feat
 
-        # (batch_size, dim_rna + dim_adt)
-        mask = np.random.choice(2, size=inputs.shape,
-                                p=[1 - p, p]).astype(tf.keras.backend.floatx())
+        # (batch_size, dim_features)
+        mask = tfp.distributions.Bernoulli(probs=p, dtype=tf.keras.backend.floatx()).sample(sample_shape=tf.shape(inputs))
         
         # No random missing
-        mask_modal = np.random.choice(2, size=(inputs.shape[0], ))
-        mask[mask_modal==0, :] = 0.
+        mask_modal = tfp.distributions.Bernoulli(probs=0.5).sample(sample_shape=(tf.shape(inputs)[0],1))
+        mask = tf.where(mask_modal==int(0), tf.constant(0., dtype=tf.keras.backend.floatx()), mask)
         
         # Modality missing
         if missing_mask is None:
-            missing_mask = np.zeros_like(inputs)
+            missing_mask = tf.zeros_like(inputs)
+
         if len(self.dim_arr)>1:
-            mask_modal = np.random.choice(len(self.dim_arr), size=(inputs.shape[0], ), p=self.p_modal)            
+            mask_modal = tfp.distributions.Categorical(probs=self.p_modal, dtype=tf.int32).sample(sample_shape=(tf.shape(inputs)[0]))
             has_modal = tf.transpose(
-                tf.math.segment_sum(tf.transpose(missing_mask+1), self.segment_ids)).numpy()
-            for i in np.arange(len(self.dim_arr)):                
-                mask[np.ix_(
-                    (mask_modal==i)&
-                    np.any(has_modal[:,np.arange(len(self.dim_arr))!=i]>0., axis=-1), 
-                    self.segment_ids==i)] = 1.
+                tf.math.segment_sum(tf.transpose(missing_mask+1), self.segment_ids))
+            for i in tf.range(len(self.dim_arr), dtype=tf.int32):
+                condition = tf.logical_and(
+                  tf.equal(mask_modal, i),
+                  tf.reduce_any(
+                      tf.where(tf.expand_dims(tf.range(tf.shape(has_modal)[1])!=i, 0), has_modal, 0)>0, axis=-1)
+                )
+
+                mask = tf.where(tf.logical_and(
+                    tf.expand_dims(condition,-1), tf.expand_dims(tf.equal(self.segment_ids, i),0)),
+                    1., mask)
             
-        mask = np.where(missing_mask==-1., -1., mask)
+        mask = tf.where(missing_mask==-1., -1., mask)
         
         return mask
+#     def __init__(self, dim_arr, p_feat=0.05, p_modal=None):
+#         self.p_feat = p_feat
+#         self.dim_arr = dim_arr
+#         self.segment_ids = np.repeat(np.arange(len(dim_arr)), dim_arr)
+#         if p_modal is None:
+#             p_modal = np.array(dim_arr, dtype=float)
+#             p_modal /= np.sum(p_modal)
+#         self.p_modal = p_modal
+        
+#     def __call__(self, inputs, missing_mask=None, p=None):
+#         if p is None:
+#             p = self.p_feat
+#         # (batch_size, dim_features)
+#         mask = np.random.choice(2, size=inputs.shape,
+#                                 p=[1 - p, p]).astype(tf.keras.backend.floatx())
+        
+#         # No random missing
+#         mask_modal = np.random.choice(2, size=(inputs.shape[0], ))
+#         mask[mask_modal==0, :] = 0.
+        
+#         # Modality missing
+#         mask_modal = np.random.choice(len(self.dim_arr), size=(inputs.shape[0], ), p=self.p_modal)
+#         if missing_mask is None:
+#             missing_mask = np.zeros_like(inputs)
+#         if len(self.dim_arr)>1:
+#             mask_modal = np.random.choice(len(self.dim_arr), size=(inputs.shape[0], ), p=self.p_modal)            
+#             has_modal = tf.transpose(
+#                 tf.math.segment_sum(tf.transpose(missing_mask+1), self.segment_ids)).numpy()
+#             for i in np.arange(len(self.dim_arr)):                
+#                 mask[np.ix_(
+#                     (mask_modal==i)&
+#                     np.any(has_modal[:,np.arange(len(self.dim_arr))!=i]>0., axis=-1), 
+#                     self.segment_ids==i)] = 1.
+
+#         mask = np.where(missing_mask==-1., -1., mask)
+        
+#         return mask
     
     
 class Early_Stopping():

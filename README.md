@@ -1,12 +1,30 @@
-# Variational autoencoder for multimodal single-cell mosaic integration and transfer learning.
-
-This repository contains implementations of *scVAEIT* for the paper ''*Robust probabilistic modeling for single-cell multimodal mosaic integration and imputation via scVAEIT*'' ([bioRxiv](https://doi.org/10.1101/2022.07.25.501456)).
 
 
-Check out the example folder for illustrations of how to use *scVAEIT* for
-- imputation [`imputation_1modality.ipynb`](https://github.com/jaydu1/scVAEIT/blob/main/example/imputation_1modality.ipynb)
-- imputation [`imputation_2modalities.ipynb`](https://github.com/jaydu1/scVAEIT/blob/main/example/imputation_2modalities.ipynb)
-- integration [`integration_3modalities.ipynb`](https://github.com/jaydu1/scVAEIT/blob/main/example/integration_3modalities.ipynb)
+# Variational autoencoder for multimodal mosaic integration and transfer learning
+
+This repository contains implementations of *scVAEIT* for integration and imputation of multi-modal datasets. 
+*scVAEIT* (Variational autoencoder for multimodal single-cell mosaic integration and transfer learning) is originally proposed by [[Du22]](#references) for single-cell gemonics data.
+*scVAEIT* is a deep generative model based on a variational autoencoder (VAE) with masking strategies, which can integrate and impute multi-modal single-cell data, such as single-cell DOGMA-seq, CITE-seq, and ASAP-seq data. 
+*scVAEIT* has also been extended to impute proteomic data in [[Moon24]](#references).
+*scVAEIT* is implemented in Python and R wrapper is also avialable.
+
+
+
+Check out the example folder for illustrations of how to use *scVAEIT*:
+
+Example | Language | Notebooks
+---|---|---
+Imputation of ADT | ![Python Badge](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=fff&style=flat-square) | [`imputation_1modality.ipynb`](https://github.com/jaydu1/scVAEIT/blob/main/example/imputation_1modality.ipynb)
+Imputation of RNA and ADT | ![Python Badge](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=fff&style=flat-square) | [`imputation_2modalities.ipynb`](https://github.com/jaydu1/scVAEIT/blob/main/example/imputation_2modalities.ipynb)
+Integration of RNA, ADT, and peaks | ![Python Badge](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=fff&style=flat-square) | [`integration_3modalities.ipynb`](https://github.com/jaydu1/scVAEIT/blob/main/example/integration_3modalities.ipynb)
+Imputation of RNA | ![R Badge](https://img.shields.io/badge/R-276DC3?logo=r&logoColor=fff&style=flat-square) | [`imputation_scRNAseq.ipynb`](https://github.com/jaydu1/scVAEIT/blob/main/example/VAEIT&#32;in&#32;R/imputation_scRNAseq.ipynb)
+Imputation of peptides | ![R Badge](https://img.shields.io/badge/R-276DC3?logo=r&logoColor=fff&style=flat-square) | [`imputation_peptide.ipynb`](https://github.com/jaydu1/scVAEIT/blob/main/example/VAEIT&#32;in&#32;R/imputation_peptide.ipynb)
+
+
+
+
+
+
 
 # Dependencies
 
@@ -15,11 +33,11 @@ The dependencies can be installed via the following commands:
 ```cmd
 mamba create --name tf python=3.9 -y
 conda activate tf
-mamba install -c conda-forge "tensorflow>=2.12" "tensorflow-probability>=0.12" pandas jupyter -y
+mamba install -c conda-forge "tensorflow>=2.12, <2.16" "tensorflow-probability>=0.12, <0.24" pandas jupyter -y
 mamba install -c conda-forge "scanpy>=1.9.2" matplotlib scikit-learn -y
 ```
 
-If you are using `conda,` simply replace `mamba` above with `conda.`
+If you are using `conda`, simply replace `mamba` above with `conda`.
 
 
 # Reproducibility Materials
@@ -63,3 +81,10 @@ Some of the important hyperparameters are:
 In our experiments, the results were not sensitive to the above parameters. So you can just use reasonable values as in the example, except the following parameter requires some care depending on your data:
 
 - `beta_modal` represents the importance of each modality. You run the model on your dataset for a few epochs and pick `beta_modal` such that the likelihoods (which will be printed during training) of all modalities are roughly in the same order. Notably, the number of peaks is generally very large, so its likelihood will have a higher value. And that is why you can see it has a small weight 0.01, in the example where `beta_modal = [0.14,0.85,0.01]`.
+
+
+# References
+
+
+- [Du22] Du, J. H., Cai, Z., & Roeder, K. (2022). Robust probabilistic modeling for single-cell multimodal mosaic integration and imputation via scVAEIT. Proceedings of the National Academy of Sciences, 119(49), e2214414119.
+- [Moon24] Moon, H., Du, J. H., Lei, J., & Roeder, K. (2024). Augmented Doubly Robust Post-Imputation Inference for Proteomic data. bioRxiv, 2024-03.
