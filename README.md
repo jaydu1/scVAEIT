@@ -3,10 +3,10 @@
 # Variational autoencoder for multimodal mosaic integration and transfer learning
 
 This repository contains implementations of *scVAEIT* for integration and imputation of multi-modal datasets. 
-*scVAEIT* (Variational autoencoder for multimodal single-cell mosaic integration and transfer learning) is originally proposed by [[Du22]](#references) for single-cell gemonics data.
+*scVAEIT* (Variational autoencoder for multimodal single-cell mosaic integration and transfer learning) was originally proposed by [[Du22]](#references) for single-cell genomics data.
 *scVAEIT* is a deep generative model based on a variational autoencoder (VAE) with masking strategies, which can integrate and impute multi-modal single-cell data, such as single-cell DOGMA-seq, CITE-seq, and ASAP-seq data. 
-*scVAEIT* has also been extended to impute proteomic data in [[Moon24]](#references).
-*scVAEIT* is implemented in Python and R wrapper is also avialable.
+*scVAEIT* has also been extended to impute single-cell proteomic data in [[Moon24]](#references), though it is also applicable to other types of data.
+*scVAEIT* is implemented in Python, and an R wrapper is also available.
 
 
 
