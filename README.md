@@ -21,12 +21,14 @@ Imputation of RNA | ![R Badge](https://img.shields.io/badge/R-276DC3?logo=r&logo
 Imputation of peptides | ![R Badge](https://img.shields.io/badge/R-276DC3?logo=r&logoColor=fff&style=flat-square) | [`imputation_peptide.ipynb`](https://github.com/jaydu1/scVAEIT/blob/main/example/VAEIT&#32;in&#32;R/imputation_peptide.ipynb)
 
 
+## Reproducibility Materials
+The code for reproducing results in the paper [[Du22]](#references) can be found in the folder `Reproducibility materials`.
+The large preprocessed dataset that contains DOGMA-seq, CITE-seq, and ASAP-seq data from GSE156478 can be accessed through [Google Drive](https://drive.google.com/drive/folders/19bzIGKex9Cwoy3ZWXra6D2hvqDtZOvfB?usp=drive_link).
 
 
 
 
-
-# Dependencies
+## Dependencies
 
 The dependencies can be installed via the following commands:
 
@@ -40,12 +42,10 @@ mamba install -c conda-forge "scanpy>=1.9.2" matplotlib scikit-learn -y
 If you are using `conda`, simply replace `mamba` above with `conda`.
 
 
-# Reproducibility Materials
-The code for reproducing results in the paper can be found in the folder `Reproducibility materials`.
-The large preprocessed dataset that contains DOGMA-seq, CITE-seq, and ASAP-seq data from GSE156478 can be accessed through [Google Drive](https://drive.google.com/drive/folders/19bzIGKex9Cwoy3ZWXra6D2hvqDtZOvfB?usp=drive_link).
 
 
-# Parameters
+
+# Prameters
 ## Network parameters
 
 In the example, basically, the network is operated in two levels of blocks:
