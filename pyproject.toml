@@ -6,5 +6,4 @@ build-backend = "setuptools.build_meta"
 
 
 [tool.setuptools.packages.find]
-include = ["sepal_ui*"]
 exclude = ["Reproducibility*", "example*"]
