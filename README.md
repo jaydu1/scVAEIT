@@ -1,4 +1,4 @@
-
+[![PyPI](https://img.shields.io/pypi/v/scVAEIT?label=pypi)](https://pypi.org/project/scVAEIT)
 
 # Variational autoencoder for multimodal mosaic integration and transfer learning
 
@@ -30,7 +30,13 @@ The large preprocessed dataset that contains DOGMA-seq, CITE-seq, and ASAP-seq d
 
 ## Dependencies
 
-The dependencies can be installed via the following commands:
+The package can be installed via PyPI:
+
+```cmd
+pip install scVAEIT
+```
+
+Alternatively, the dependencies can be installed via the following commands:
 
 ```cmd
 mamba create --name tf python=3.9 -y
