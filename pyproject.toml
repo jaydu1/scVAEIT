@@ -1,12 +1,25 @@
+[project]
+name = "scVAEIT"
+dynamic = ["version"]
+description = "scVAEIT is a Python module of Variational autoencoder for single-cell mosaic integration and transfer learning."
+
+dependencies = [
+    "scikit-learn",
+    "matplotlib",
+    "pandas",
+    "jupyter",
+    "numpy",
+    "tensorflow >= 2.12, < 2.16",
+    "tensorflow-probability >= 0.12, < 0.24",
+    "scanpy >= 1.9.2",
+]
+
 [build-system]
-requires = ["setuptools>=61;python_version>='3'", "setuptools_scm[toml]>8"]
+requires = ["setuptools==68.2.2;python_version>='3'", "setuptools_scm[toml]>8"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools_scm]
-
-[project]
-name = ["scVAEIT"]
-dynamic = ["version"]
+[tool.setuptools.packages.find]
+where = ['src']
 
 [tool.setuptools.dynamic]
-version = {attr = "mypackage.__version__"}
+version = {attr = "scVAEIT.__version__"}
