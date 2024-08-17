@@ -1,0 +1,4 @@
+prune example
+recursive-exclude Reproducibility?materials *
+recursive-exclude ?git* *
+exclude .gitignore

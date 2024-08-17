@@ -18,8 +18,12 @@ dependencies = [
 requires = ["setuptools==68.2.2;python_version>='3'", "setuptools_scm[toml]>8"]
 build-backend = "setuptools.build_meta"
 
+
+[tool.setuptools]
+include-package-data = true
+
 [tool.setuptools.packages.find]
-where = ['src']
+exclude = ["example*", "Reproducibility*"]
 
 [tool.setuptools.dynamic]
 version = {attr = "scVAEIT.__version__"}

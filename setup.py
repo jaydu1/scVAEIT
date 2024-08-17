@@ -18,8 +18,7 @@ setup(
         "License :: OSI Approved :: MIT License",
         "Intended Audience :: Developers",
     ],
-    package_dir={'':"src"},
-    packages=find_packages("src"),
+    packages=find_packages(exclude=["*example*", "*Reproducibility*"]),
     python_requires=">=3.9",
     install_requires=[
         "scikit-learn",
@@ -30,5 +29,5 @@ setup(
         "tensorflow >= 2.12, < 2.16",
         "tensorflow-probability >= 0.12, < 0.24",
         "scanpy >= 1.9.2",
-    ],
+    ]
 )
