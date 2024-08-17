@@ -39,14 +39,12 @@ class loss_metric(object):
                                        for loss_name in self.loss_names}
             self.hist[name] = {loss_name:[] for loss_name in self.loss_names}
         
-        
     def __call__(self, losses, name):
         for i,loss_name in enumerate(self.losses[name]):
             if i==0:
                 self.losses[name][loss_name](tf.reduce_sum(losses))
             else:
                 self.losses[name][loss_name](losses[i-1])
-        
         
     def reset_state(self):
         for name in self.losses:
@@ -128,7 +126,8 @@ def train(dataset_train, dataset_valid, vae, checkpoint_dir,
         if manager.latest_checkpoint:
             checkpoint.restore(manager.latest_checkpoint)
             print(f"Restored from {manager.latest_checkpoint}", flush = True)
-            
+            checkpoint.step.assign_add(1)
+
     evaluate = dataset_valid is not None
     loss_monitor = loss_metric(vae.config.uni_block_names, evaluate, verbose)        
     early_stopping = Early_Stopping(patience=es_patience, tolerance=es_tolerance, relative=es_relative)
