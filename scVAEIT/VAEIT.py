@@ -86,7 +86,7 @@ class VAEIT():
 
 
             'skip_conn':False, # whether to use skip connection in decoder                     
-            'max_vals':tf.constant(tf.reduce_max(tf.math.abs(self.data)), dtype=tf.keras.backend.floatx()),
+            'max_vals':None,#tf.constant(tf.reduce_max(tf.math.abs(self.data)), dtype=tf.keras.backend.floatx()),
             
             'gamma':0.
         }, **config}
@@ -103,7 +103,6 @@ class VAEIT():
         config.dim_block_enc = check_arr_type(config.dim_block_enc, np.int32)
         config.dim_block_dec = check_arr_type(config.dim_block_dec, np.int32)
         
-        self.config = config
 
         # preprocess batch
         self.batches = np.array([], dtype=np.float32).reshape((data.shape[0],0))
@@ -119,7 +118,7 @@ class VAEIT():
             self.batches = np.c_[self.batches, batches_cont]
         self.batches = tf.convert_to_tensor(self.batches, dtype=tf.keras.backend.floatx())
         
-        if conditions is not None and self.config.gamma != 0.:
+        if conditions is not None and config.gamma != 0.:
             ## observations with np.nan will not participant in calculating mmd_loss
             conditions = np.array(conditions)
             if len(conditions.shape)<2:
@@ -127,9 +126,11 @@ class VAEIT():
             self.conditions = OrdinalEncoder(dtype=int, encoded_missing_value=-1).fit_transform(conditions) + int(1)
             
         else:
-            self.config.gamma = 0.
+            config.gamma = 0.
             self.conditions = np.zeros((data.shape[0],1), dtype=np.int32)
         self.conditions = tf.cast(self.conditions, tf.int32)
+
+        
 
         # [num_cells, num_features]
         self.masks = tf.convert_to_tensor(masks, dtype=tf.keras.backend.floatx())
@@ -140,9 +141,20 @@ class VAEIT():
         else:
             self.id_dataset = tf.convert_to_tensor(id_dataset, dtype=tf.int32)
             self.full_masks = False
+
+        if config.max_vals is None:
+            segment_ids = np.repeat(np.arange(n_block), config.dim_block)
+            config.max_vals = np.zeros(segment_ids.max()+1)
+            np.maximum.at(config.max_vals, segment_ids, np.max(data,axis=0) * 2.)
+            for i, dist in enumerate(config.dist_block):
+                if dist != 'NB':
+                    config.max_vals[i] = tf.constant(float('nan'))#tf.constant(np.inf)
+        elif np.isscalar(config.max_vals):
+            config.max_vals = tf.constant(config.max_vals, shape=n_block, dtype=tf.keras.backend.floatx())
+        config.max_vals = tf.convert_to_tensor(config.max_vals, dtype=tf.keras.backend.floatx())
         
         self.batch_size_inference = 512
-        
+        self.config = config
         self.reset()
         print(self.config, self.masks.shape, self.data.shape, self.batches.shape, flush = True)
         
@@ -157,7 +169,7 @@ class VAEIT():
         
 
     def train(self, valid = False, stratify = False, test_size = 0.1, random_state: int = 0,
-            learning_rate: float = 1e-3, batch_size: Optional[int] = None, batch_size_inference: Optional[int] = None, 
+            learning_rate: float = 1e-3, batch_size: Optional[int] = None, batch_size_inference: Optional[int] = None,
             L: int = 1, num_epoch: int = 200, num_step_per_epoch: Optional[int] = None, save_every_epoch: Optional[int] = 25, init_epoch: Optional[int] = 1,
             early_stopping_patience: int = 10, early_stopping_tolerance: float = 1e-4, 
             early_stopping_relative: bool = True, verbose: bool = False,
@@ -312,7 +324,7 @@ class VAEIT():
         return self.vae.get_z(self.dataset_full, self.full_masks, masks, zero_out)
 
 
-    def get_denoised_data(self, masks=None, zero_out=True, batch_size_inference=512, return_mean=True, L=50):
+    def get_denoised_data(self, masks=None, zero_out=True, batch_size_inference=256, return_mean=True, L=50):
         self.set_dataset(batch_size_inference)        
 
         return self.vae.get_recon(self.dataset_full, self.full_masks, masks, zero_out, return_mean, L)

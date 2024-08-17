@@ -67,7 +67,7 @@ def get_dist(dist, max_val):
     if dist=='NB':
         generative_dist = lambda x_hat, disp, mask: tfd.Independent(tfd.Masked(
                 tfd.NegativeBinomial.experimental_from_mean_dispersion(
-                    mean = tfp.math.clip_by_value_preserve_gradient(x_hat, -max_val, max_val), 
+                    mean = x_hat * max_val,#tfp.math.clip_by_value_preserve_gradient(x_hat, -max_val, max_val), 
                     dispersion = disp, name='NB_rv'
                 ), mask), reinterpreted_batch_ndims=1)
 
@@ -86,7 +86,7 @@ def get_dist(dist, max_val):
     elif dist=='Poisson':
         generative_dist = lambda x_hat, disp, mask: tfd.Independent(tfd.Masked(
             tfd.Poisson(
-                log_rate = tfp.math.clip_by_value_preserve_gradient(x_hat, -tf.math.inf, tf.math.log(max_val)), 
+                log_rate = tfp.math.clip_by_value_preserve_gradient(x_hat, tf.constant(-np.inf), tf.math.log(max_val)), 
                 name='Poisson_rv'
             ), mask), reinterpreted_batch_ndims=1)
     return generative_dist
@@ -94,7 +94,7 @@ def get_dist(dist, max_val):
 
 
 class OutputBlock(tf.keras.layers.Layer):
-    def __init__(self, dim_outputs, dist_outputs, dim_latents, dim_embed, max_val, names=None, bn=True, **kwargs):
+    def __init__(self, dim_outputs, dist_outputs, dim_latents, dim_embed, max_vals, names=None, bn=True, **kwargs):
         '''
         Parameters
         ----------
@@ -131,7 +131,8 @@ class OutputBlock(tf.keras.layers.Layer):
         else:
             self.bn = [Lambda(lambda x,training: tf.identity(x)) for _ in range(len(dim_latents))]
         self.output_layers = [Dense(d, use_bias=use_bias, name=names[i]) for i,d in enumerate(self.dim_outputs)]
-        self.out_act = [tf.identity if dist in ['Gaussian', 'Poisson'] else tf.nn.softplus for dist in self.dist_outputs]
+        self.out_act = [tf.identity if dist in ['Gaussian', 'Poisson'] else 
+                        tf.nn.sigmoid for dist in self.dist_outputs]
 
         self.disp = [
             Dense(d, use_bias=use_bias, activation = tf.nn.softplus, name="disp".format(names[i])) 
@@ -140,7 +141,7 @@ class OutputBlock(tf.keras.layers.Layer):
                 for i,d in enumerate(dim_outputs)
         ]        
         
-        self.dists = [get_dist(dist, max_val) for dist in self.dist_outputs]
+        self.dists = [get_dist(dist, max_val) for dist, max_val in zip(self.dist_outputs, max_vals)]
         self.concat = tf.keras.layers.Concatenate()
         
         
@@ -386,7 +387,6 @@ class Decoder(Layer):
         _z = tf.concat([
             z, 
             tf.tile(tf.expand_dims(tf.concat([embed,batches], axis=-1), 1), (1,L,1))
-            # tf.tile(tf.expand_dims(batches, 1), (1,L,1))
         ], axis=-1)
         for dense, bn in zip(self.dense_layers, self.batch_norm_layers):
             _z = dense(_z)
