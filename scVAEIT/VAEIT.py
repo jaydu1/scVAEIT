@@ -86,7 +86,7 @@ class VAEIT():
 
 
             'skip_conn':False, # whether to use skip connection in decoder                     
-            'max_vals':None,#tf.constant(tf.reduce_max(tf.math.abs(self.data)), dtype=tf.keras.backend.floatx()),
+            'max_vals':None,
             
             'gamma':0.
         }, **config}
@@ -145,10 +145,10 @@ class VAEIT():
         if config.max_vals is None:
             segment_ids = np.repeat(np.arange(n_block), config.dim_block)
             config.max_vals = np.zeros(segment_ids.max()+1)
-            np.maximum.at(config.max_vals, segment_ids, np.max(data,axis=0) * 2.)
+            np.maximum.at(config.max_vals, segment_ids, np.max(data,axis=0))
             for i, dist in enumerate(config.dist_block):
                 if dist != 'NB':
-                    config.max_vals[i] = tf.constant(float('nan'))#tf.constant(np.inf)
+                    config.max_vals[i] = tf.constant(float('nan'))
         elif np.isscalar(config.max_vals):
             config.max_vals = tf.constant(config.max_vals, shape=n_block, dtype=tf.keras.backend.floatx())
         config.max_vals = tf.convert_to_tensor(config.max_vals, dtype=tf.keras.backend.floatx())

@@ -67,10 +67,9 @@ def get_dist(dist, max_val):
     if dist=='NB':
         generative_dist = lambda x_hat, disp, mask: tfd.Independent(tfd.Masked(
                 tfd.NegativeBinomial.experimental_from_mean_dispersion(
-                    mean = x_hat * max_val,#tfp.math.clip_by_value_preserve_gradient(x_hat, -max_val, max_val), 
+                    mean = x_hat * max_val,
                     dispersion = disp, name='NB_rv'
                 ), mask), reinterpreted_batch_ndims=1)
-
     elif dist=='Bernoulli':
         generative_dist = lambda x_hat, disp, mask: tfd.Independent(tfd.Masked(
             tfd.Bernoulli(
