@@ -1,30 +1,17 @@
 name: Publish to PyPI.org
-
 on:
   release:
-    types: [created]
-
+    types: [published]
 jobs:
-  pypi-publish:
-    name: Publish release to PyPI
+  pypi:
     runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/p/scVAEIT
-    permissions:
-      id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - name: Checkout
+        uses: actions/checkout@v3
         with:
-          python-version: "3.x"
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install setuptools wheel
-      - name: Build package
-        run: |
-          python setup.py sdist bdist_wheel  # Could also be python -m build
-      - name: Publish package distributions to PyPI
+          fetch-depth: 0
+      - run: python3 -m pip install --upgrade build && python3 -m build
+      - name: Publish package
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
