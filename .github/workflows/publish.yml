@@ -10,7 +10,10 @@ jobs:
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
-      - run: python3 -m pip install --upgrade build && python3 -m build
+      - run: python3 -m pip install --upgrade build
+      - name: show python path
+        run: python -c "import sys; import os; print('\n'.join(sys.path)); print(os.listdir())"
+      - run: python3 -m build
       - name: Publish package
         uses: pypa/gh-action-pypi-publish@release/v1.9
         with:
