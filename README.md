@@ -1,4 +1,5 @@
-[![PyPI](https://img.shields.io/pypi/v/scVAEIT?label=pypi)](https://pypi.org/project/scVAEIT)
+[![PyPI](https://img.shields.io/pypi/v/scVAEIT?label=pypi&color=orange)](https://pypi.org/project/scVAEIT)
+[![PyPI-Downloads](https://img.shields.io/pepy/dt/scVAEIT?color=green)](https://pepy.tech/project/scVAEIT)
 
 # Variational autoencoder for multimodal mosaic integration and transfer learning
 
