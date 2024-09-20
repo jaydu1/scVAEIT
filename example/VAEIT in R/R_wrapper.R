@@ -31,7 +31,7 @@ vae <- function(
     # data
   data, masks, batches_cate, batches_cont, conditions=NULL,
   # network structure
-  dim_input_arr, dimensions=c(16), dim_latent=4L,
+  dim_input_arr=NULL, dimensions=c(16), dim_latent=4L,
   dim_block=NULL, dist_block=NULL, dim_block_enc=c(64), dim_block_dec=c(64),
   block_names=NULL, uni_block_names=NULL, dim_block_embed=128L, skip_conn=FALSE,
   # hyperparameters for training
@@ -40,8 +40,9 @@ vae <- function(
   model_dir='r_checkpoint/', verbose=TRUE, return_mean=TRUE){
   
   data <- as.matrix(data)
+  
   config = list(
-    # A network stucture of 
+    # A network structure of 
     # x     :              dim_input -> 64 -> 16 -> z 4 -> 16 -> 64 -> dim_input
     #                                 |                  |
     # masks : dim_input -> dim_embed ->                 ->
@@ -74,7 +75,7 @@ vae <- function(
   scVAEIT$reset_random_seeds(as.integer(seed))
   
   cat('Initializing model...\n')
-  model <- scVAEIT$scVAEIT(config, data, masks, NULL, batches_cate, batches_cont, conditions)
+  model <- scVAEIT$VAEIT(config, data, masks, NULL, batches_cate, batches_cont, conditions)
   
   cat('Training model...\n')
   model$train(
