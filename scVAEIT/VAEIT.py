@@ -60,12 +60,12 @@ class VAEIT():
         self.data = tf.convert_to_tensor(data, dtype=tf.keras.backend.floatx())
         
         # prprocessing config
-        if 'dim_input_arr' not in config:
+        if 'dim_input_arr' not in config or config['dim_input_arr'] is None:
             config['dim_input_arr'] = data.shape[1]
         if np.isscalar(config['dim_input_arr']):
             config['dim_input_arr'] = np.array([config['dim_input_arr']], dtype=np.int32)
         n_modal = len(config['dim_input_arr'])
-        n_block = len(config['dim_block']) if 'dim_block' in config else n_modal
+        n_block = len(config['dim_block']) if 'dim_block' in config and config['dim_block'] is not None else n_modal
         
         
         config = dict(filter(lambda item: item[1] is not None, config.items()))
@@ -226,6 +226,7 @@ class VAEIT():
 
         if batch_size is None:
             batch_size = 256 if self.full_masks else 64
+        batch_size = np.minimum(batch_size, self.data.shape[0])
         if batch_size_inference is None:
             batch_size_inference = batch_size
             
