@@ -7,7 +7,7 @@ __author__ = "Jin-Hong Du"
 __copyright__ = "Copyright 2024, The Cross-Modalilty Transfer Learning Project"
 
 __license__ = "MIT"
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 __maintainer__ = "Jin-Hong Du"
 __email__ = "jinhongd@andrew.cmu.edu"
 __status__ = "Development"
