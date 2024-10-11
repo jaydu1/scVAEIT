@@ -27,7 +27,7 @@ For preparing your own data to run scVAEIT, please read about:
 
 Example | Language | Notebooks
 ---|---|---
-Prepare input data | ![Python Badge](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=fff&style=flat-square) | [`prepare_data_input.ipynb`]([https://github.com/jaydu1/scVAEIT/blob/main/example/imputation_1modality.ipynb](https://github.com/jaydu1/scVAEIT/blob/main/example/prepare_data_input.ipynb))
+Prepare input data | ![Python Badge](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=fff&style=flat-square) | [`prepare_data_input.ipynb`](https://github.com/jaydu1/scVAEIT/blob/main/example/prepare_data_input.ipynb)
 
 
 ## Reproducibility Materials
