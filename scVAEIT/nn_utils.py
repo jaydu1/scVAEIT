@@ -170,8 +170,8 @@ class OutputBlock(tf.keras.layers.Layer):
             self.dists[i](
                 self.out_act[i](
                     self.output_layers[i](self.bn[i](
-                        self.linear_layers[i](z,training=training), training=training)  
-                        + x_emded_list[i], training=training)
+                        self.linear_layers[i](z,training=training) + x_emded_list[i], 
+                        training=training), training=training)
                 ),                
                 tf.expand_dims(
                     tfp.math.clip_by_value_preserve_gradient(
@@ -193,8 +193,8 @@ class OutputBlock(tf.keras.layers.Layer):
             self.dists[i](
                 self.out_act[i](
                     self.output_layers[i](self.bn[i](
-                        self.linear_layers[i](z, training=training), training=training)
-                        + x_emded_list[i], training=training)
+                        self.linear_layers[i](z, training=training) + x_emded_list[i], 
+                        training=training), training=training)
                 ),                 
                 tf.expand_dims(
                     tfp.math.clip_by_value_preserve_gradient(
@@ -311,9 +311,9 @@ class Encoder(Layer):
         tmp = self.input_layer(x, embed, batches, training=training)
         _z = tmp
         for dense, bn in zip(self.dense_layers, self.batch_norm_layers):
-            _z = dense(_z)
+            _z = dense(_z, training=training)
             _z = bn(_z, training=training)
-        z_mean = self.batch_norm_layers[-1](self.latent_mean(_z), training=training)
+        z_mean = self.batch_norm_layers[-1](self.latent_mean(_z, training=training), training=training)
         z_log_var = self.latent_log_var(_z)
         _z_mean = tf.tile(tf.expand_dims(z_mean, 1), (1,L,1))
         _z_log_var = tf.tile(tf.expand_dims(z_log_var, 1), (1,L,1))
@@ -388,7 +388,7 @@ class Decoder(Layer):
             tf.tile(tf.expand_dims(tf.concat([embed,batches], axis=-1), 1), (1,L,1))
         ], axis=-1)
         for dense, bn in zip(self.dense_layers, self.batch_norm_layers):
-            _z = dense(_z)
+            _z = dense(_z, training=training)
             _z = bn(_z, training=training)
 
         if return_prob:

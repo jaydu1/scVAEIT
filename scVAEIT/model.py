@@ -147,7 +147,7 @@ class VariationalAutoEncoder(tf.keras.Model):
         '''
         _masks = tf.where(bool_mask_in, 0., 1.)
         _x = tf.where(bool_mask_in, x, 0.)
-        embed = self.embed_layer(_masks)
+        embed = self.embed_layer(_masks, training=training)
         z_mean, z_log_var, z, x_embed = self.encoder(_x, embed, batches, L=L, training=training)
         if not self.config.skip_conn:
             x_embed = tf.zeros_like(x_embed)
@@ -198,7 +198,7 @@ class VariationalAutoEncoder(tf.keras.Model):
             if not full_masks:
                 m = tf.gather(masks, m)
             _m = tf.where(m==0., 0., 1.)
-            embed = self.embed_layer(_m)
+            embed = self.embed_layer(_m, training=False)
             if zero_out:
                 x = tf.where(m==0, x, 0.)
             _, _, z, x_embed = self.encoder(x, embed, b, L=L, training=False)
