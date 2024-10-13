@@ -79,7 +79,7 @@ class VAEIT():
 
             'uni_block_names':np.char.add(np.repeat('M-', n_modal), np.arange(n_modal).astype(str)),
             'block_names':np.char.add(np.repeat('M-', n_block), np.arange(n_block).astype(str)),
-            'dist_block':np.repeat('NB', n_block),
+            'dist_block':np.repeat('Gaussian', n_block),
             'dim_block':np.array(config['dim_input_arr'], dtype=np.int32),                     
             'dim_block_enc':np.zeros(n_block, dtype=np.int32),
             'dim_block_dec':np.zeros(n_block, dtype=np.int32),
@@ -148,7 +148,7 @@ class VAEIT():
             np.maximum.at(config.max_vals, segment_ids, np.max(data,axis=0))
             for i, dist in enumerate(config.dist_block):
                 if dist != 'NB':
-                    config.max_vals[i] = tf.constant(float('nan'))
+                    config.max_vals[i] = tf.constant(np.inf)
         elif np.isscalar(config.max_vals):
             config.max_vals = tf.constant(config.max_vals, shape=n_block, dtype=tf.keras.backend.floatx())
         config.max_vals = tf.convert_to_tensor(config.max_vals, dtype=tf.keras.backend.floatx())
@@ -169,7 +169,7 @@ class VAEIT():
         
 
     def train(self, valid = False, stratify = False, test_size = 0.1, random_state: int = 0,
-            learning_rate: float = 1e-3, batch_size: Optional[int] = None, batch_size_inference: Optional[int] = None,
+            learning_rate: float = 3e-4, num_repeat: Optional[int] = 1, batch_size: Optional[int] = None, batch_size_inference: Optional[int] = None,
             L: int = 1, num_epoch: int = 200, num_step_per_epoch: Optional[int] = None, save_every_epoch: Optional[int] = 25, init_epoch: Optional[int] = 1,
             early_stopping_patience: int = 10, early_stopping_tolerance: float = 1e-4, 
             early_stopping_relative: bool = True, verbose: bool = False,
@@ -226,7 +226,7 @@ class VAEIT():
 
         if batch_size is None:
             batch_size = 256 if self.full_masks else 64
-        batch_size = np.minimum(batch_size, self.data.shape[0])
+        batch_size = np.minimum(batch_size, self.data.shape[0]*num_repeat)
         if batch_size_inference is None:
             batch_size_inference = batch_size
             
@@ -242,7 +242,7 @@ class VAEIT():
             
             self.dataset_train = tf.data.Dataset.from_tensor_slices((
                 self.data[id_train], self.batches[id_train], self.id_dataset[id_train], self.conditions[id_train]
-                )).shuffle(buffer_size = len(id_train), seed=0,
+                )).repeat(num_repeat).shuffle(buffer_size = len(id_train), seed=0,
                            reshuffle_each_iteration=True).batch(batch_size, drop_remainder=True).prefetch(tf.data.experimental.AUTOTUNE)
 
             self.dataset_valid = tf.data.Dataset.from_tensor_slices((
@@ -252,7 +252,7 @@ class VAEIT():
             id_train = np.arange(self.data.shape[0])
             self.dataset_train = tf.data.Dataset.from_tensor_slices((
                 self.data, self.batches, self.id_dataset, self.conditions
-                )).shuffle(buffer_size = len(id_train), seed=0,
+                )).repeat(num_repeat).shuffle(buffer_size = len(id_train), seed=0,
                            reshuffle_each_iteration=True).batch(batch_size, drop_remainder=True).prefetch(tf.data.experimental.AUTOTUNE)
             self.dataset_valid = None
             

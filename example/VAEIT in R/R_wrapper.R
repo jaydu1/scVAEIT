@@ -34,13 +34,14 @@ vae <- function(
   dim_input_arr=NULL, dimensions=c(16), dim_latent=4L,
   dim_block=NULL, dist_block=NULL, dim_block_enc=c(64), dim_block_dec=c(64),
   block_names=NULL, uni_block_names=NULL, dim_block_embed=128L, skip_conn=FALSE,
+  num_repeat=1L, batch_size=128L,
   # hyperparameters for training
   num_epoch=20L, print_every_epoch=8L,
   beta_kl=1., beta_unobs=0.9, beta_reverse=0., beta_modal=NULL, p_feat=0.5, p_modal=NULL, seed=0,
   model_dir='r_checkpoint/', verbose=TRUE, return_mean=TRUE){
   
   data <- as.matrix(data)
-  
+
   config = list(
     # A network structure of 
     # x     :              dim_input -> 64 -> 16 -> z 4 -> 16 -> 64 -> dim_input
@@ -82,6 +83,8 @@ vae <- function(
     num_epoch=as.integer(num_epoch), # the number of iterations, generally ~10 would be 
     # good. If this is too large, it may overfit the data.
     # if X is provided, then evaluate the model every 4 epochs
+    num_repeat=num_repeat,
+    batch_size=batch_size,
     checkpoint_dir=NULL,
     save_every_epoch=as.integer(print_every_epoch),
     verbose=verbose
