@@ -56,7 +56,7 @@ mamba install -c conda-forge "scanpy>=1.9.2" matplotlib scikit-learn -y
 
 If you are using `conda`, simply replace `mamba` above with `conda`.
 
-
+The code is only tested on Linux and MacOS. If you are using Windows, installing the dependencies `pip` instead of `conda` is more convenient.
 
 
 
