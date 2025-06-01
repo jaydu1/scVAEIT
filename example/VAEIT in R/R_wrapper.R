@@ -24,7 +24,6 @@ scVAEIT <- import("scVAEIT")
 #' @param batches_cont A n-by-b2 matrix containing continuous covariates.
 #' @param conditions A n-by-b3 matrix containing ordinal covariates. Compared to batches effects, these are stronger effects to be removed.
 #' @param num_epoch The number of training epoches.
-#' @param print_every_epoch A p-by-n initialization matrix.
 #' @param return_mean whether return the mean imputed matrix or the multiple imputed matrices.
 #' @param seed The random seed.
 vae <- function(
@@ -36,9 +35,9 @@ vae <- function(
   block_names=NULL, uni_block_names=NULL, dim_block_embed=128L, skip_conn=FALSE,
   num_repeat=1L, batch_size=128L,
   # hyperparameters for training
-  num_epoch=20L, print_every_epoch=8L,
+  num_epoch=20L, save_every_epoch=NULL,
   beta_kl=1., beta_unobs=0.9, beta_reverse=0., beta_modal=NULL, p_feat=0.5, p_modal=NULL, seed=0,
-  model_dir='r_checkpoint/', verbose=TRUE, return_mean=TRUE){
+  model_dir='r_checkpoint/', verbose=TRUE, return_mean=TRUE, L=100L){
   
   data <- as.matrix(data)
 
@@ -86,12 +85,12 @@ vae <- function(
     num_repeat=num_repeat,
     batch_size=batch_size,
     checkpoint_dir=NULL,
-    save_every_epoch=as.integer(print_every_epoch),
+    save_every_epoch=save_every_epoch,
     verbose=verbose
   )
   model$save_model(model_dir)
   
-  X_imp <- model$get_denoised_data(return_mean=return_mean)
+  X_imp <- model$get_denoised_data(return_mean=return_mean, L=L)
   
   res <- list()
   res <- process_output(res, return_mean, X_imp, data, 'X_imp')
