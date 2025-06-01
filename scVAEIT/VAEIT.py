@@ -18,6 +18,8 @@ import scanpy as sc
 
 
 
+
+
 class VAEIT():
     """
     Variational Inference for integration and transfer learning.
@@ -49,115 +51,209 @@ class VAEIT():
         -------
         None
         '''
-        self.dict_method_scname = {
-            'PCA' : 'X_pca',
-            'UMAP' : 'X_umap',
-            'TSNE' : 'X_tsne',
-            'diffmap' : 'X_diffmap',
-            'draw_graph' : 'X_draw_graph_fa'
-        }
 
+        self.dict_method_scname = {
+            'PCA': 'X_pca', 'UMAP': 'X_umap', 'TSNE': 'X_tsne',
+            'diffmap': 'X_diffmap', 'draw_graph': 'X_draw_graph_fa'
+        }
+        
         self.data = tf.convert_to_tensor(data, dtype=tf.keras.backend.floatx())
         
-        # prprocessing config
+        # Process configuration
         if 'dim_input_arr' not in config or config['dim_input_arr'] is None:
             config['dim_input_arr'] = data.shape[1]
         if np.isscalar(config['dim_input_arr']):
             config['dim_input_arr'] = np.array([config['dim_input_arr']], dtype=np.int32)
+        
         n_modal = len(config['dim_input_arr'])
         n_block = len(config['dim_block']) if 'dim_block' in config and config['dim_block'] is not None else n_modal
         
+        self.config = self._process_config(config, n_modal, n_block)
         
+        # Process batches, conditions, and masks
+        self.batches = self._process_batches(batches_cate, batches_cont)
+        self.conditions = self._process_conditions(conditions)
+        self.masks, self.id_dataset, self.full_masks = self._process_masks(masks, id_dataset)
+        
+        # Compute Gaussian statistics
+        self._compute_stats(data, masks, n_block)
+
+        self.batch_size_inference = 512
+        self.reset()
+        
+        print(self.config, self.masks.shape, self.data.shape, self.batches.shape, flush=True)
+
+
+    
+    def _process_config(self, config, n_modal, n_block):
+        """Process and validate configuration parameters."""
         config = dict(filter(lambda item: item[1] is not None, config.items()))
-
-
-        config = {**{
-            'beta_kl':2., # weight for beta-VAE
-            'beta_reverse':0., # weight for reverse prediction (use masked out features to predict the observed features)
-            'beta_modal':np.ones(n_modal, dtype=np.float32), # weight for each modality
-            'p_modal':None,
-
-            'uni_block_names':np.char.add(np.repeat('M-', n_modal), np.arange(n_modal).astype(str)),
-            'block_names':np.char.add(np.repeat('M-', n_block), np.arange(n_block).astype(str)),
-            'dist_block':np.repeat('Gaussian', n_block),
-            'dim_block':np.array(config['dim_input_arr'], dtype=np.int32),                     
-            'dim_block_enc':np.zeros(n_block, dtype=np.int32),
-            'dim_block_dec':np.zeros(n_block, dtype=np.int32),
-
-
-            'skip_conn':False, # whether to use skip connection in decoder                     
-            'max_vals':None,
-            
-            'gamma':0.
-        }, **config}
-
+        
+        # Default configuration
+        defaults = {
+            'beta_kl': 2.,
+            'beta_reverse': 0.,
+            'beta_modal': np.ones(n_modal, dtype=np.float32),
+            'p_modal': None,
+            'uni_block_names': np.char.add(np.repeat('M-', n_modal), np.arange(n_modal).astype(str)),
+            'block_names': np.char.add(np.repeat('M-', n_block), np.arange(n_block).astype(str)),
+            'dist_block': np.repeat('Gaussian', n_block),
+            'dim_block': np.array(config['dim_input_arr'], dtype=np.int32),
+            'dim_block_enc': np.zeros(n_block, dtype=np.int32),
+            'dim_block_dec': np.zeros(n_block, dtype=np.int32),
+            'skip_conn': False,
+            'mean_vals': None,
+            'min_vals': None,
+            'max_vals': None,
+            'max_disp': 6.,
+            'max_zi_prob': None,
+            'gamma': 0.
+        }
+        
+        config = {**defaults, **config}
+        
         if isinstance(config, dict):
             config = SimpleNamespace(**config)
-
         
-        config.dimensions = check_arr_type(config.dimensions, np.int32)        
+        # Process arrays
+        config.dimensions = check_arr_type(config.dimensions, np.int32)
         config.dist_block = check_arr_type(config.dist_block, str)
-
+        
         if np.isscalar(config.dim_block_embed):
             config.dim_block_embed = np.full(n_block, config.dim_block_embed, dtype=np.int32)
+        
         config.dim_block_enc = check_arr_type(config.dim_block_enc, np.int32)
         config.dim_block_dec = check_arr_type(config.dim_block_dec, np.int32)
         
+        return config
 
-        # preprocess batch
-        self.batches = np.array([], dtype=np.float32).reshape((data.shape[0],0))
+
+    def _process_batches(self, batches_cate, batches_cont):
+        """Process categorical and continuous batch information."""
+        batches = np.array([], dtype=np.float32).reshape((self.data.shape[0], 0))
+
         if batches_cate is not None:
-            batches_cate = np.array(batches_cate)
             self.cat_enc = OneHotEncoder(drop='first').fit(batches_cate)
-            self.batches = self.cat_enc.transform(batches_cate).toarray()
+            batches = self.cat_enc.transform(batches_cate).toarray()
+        
         if batches_cont is not None:
-            self.cont_enc = StandardScaler()            
+            self.cont_enc = StandardScaler()
             batches_cont = self.cont_enc.fit_transform(batches_cont)
-            batches_cont = np.nan_to_num(batches_cont)
-            batches_cont = np.array(batches_cont, dtype=np.float32)            
-            self.batches = np.c_[self.batches, batches_cont]
-        self.batches = tf.convert_to_tensor(self.batches, dtype=tf.keras.backend.floatx())
+            batches_cont = np.nan_to_num(batches_cont).astype(np.float32)
+            batches = np.c_[batches, batches_cont]
         
-        if conditions is not None and config.gamma != 0.:
-            ## observations with np.nan will not participant in calculating mmd_loss
+        return tf.convert_to_tensor(batches, dtype=tf.keras.backend.floatx())
+
+    def _process_conditions(self, conditions):
+        """Process conditions for MMD loss calculation."""
+        if conditions is not None:
             conditions = np.array(conditions)
-            if len(conditions.shape)<2:
-                conditions = conditions[:,None]
-            self.conditions = OrdinalEncoder(dtype=int, encoded_missing_value=-1).fit_transform(conditions) + int(1)
+            if len(conditions.shape) < 2:
+                conditions = conditions[:, None]
+            conditions = OrdinalEncoder(dtype=int, encoded_missing_value=-1).fit_transform(conditions) + int(1)
+        else:
+            self.config.gamma = 0.
+            conditions = np.zeros((self.data.shape[0], 1), dtype=np.int32)
+
+        return tf.cast(conditions, tf.int32)
+
+
+    def _process_masks(self, masks, id_dataset):
+        """Process mask information and determine if using full masks."""
+        # Print missingness info: overall, per row, and per column
+        missing_overall = np.mean(masks==-1)
+        missing_per_row = np.mean(masks==-1, axis=1)
+        missing_per_col = np.mean(masks==-1, axis=0)
+        print(f"Missingness (overall): {missing_overall:.4f}")
+        print(f"Missingness (per row): mean={np.mean(missing_per_row):.4f}, min={np.min(missing_per_row):.4f}, max={np.max(missing_per_row):.4f}")
+        print(f"Missingness (per column): mean={np.mean(missing_per_col):.4f}, min={np.min(missing_per_col):.4f}, max={np.max(missing_per_col):.4f}")
+
+        if missing_overall == 0:
+            warnings.warn(
+                "No missing values detected in the mask (missing_overall == 0). "
+                "Please check if the mask is correct. If you intended to supply a mask, ensure missing values are marked as -1."
+            )
+
+        masks_tensor = tf.convert_to_tensor(masks, dtype=tf.keras.backend.floatx())
+
+        if masks_tensor.shape == self.data.shape:
+            return masks_tensor, masks_tensor, True
+        else:
+            id_tensor = tf.convert_to_tensor(id_dataset, dtype=tf.int32)
+            return masks_tensor, id_tensor, False
+        
+
+    def _compute_stats(self, data, masks, n_block):
+        """Compute mean, min, and max values for Gaussian blocks."""
+        masked_data = np.ma.array(data, mask=(masks == -1))
+        
+        if self.config.mean_vals is None:
+            mean_vals = np.zeros(data.shape[1])
+        else:
+            mean_vals = self.config.mean_vals
+            assert len(mean_vals) == data.shape[1], f"mean_vals should have {data.shape[1]} features, got {len(mean_vals)}"
+    
+        # Initialize max_vals and min_vals at feature level
+        if self.config.max_vals is None:
+            max_vals = np.zeros(data.shape[1])
+        elif np.isscalar(self.config.max_vals):
+            max_vals = np.full(data.shape[1], self.config.max_vals, dtype=np.float32)
+        else:
+            max_vals = self.config.max_vals
+            # If block-level values provided, expand to feature level
+            if len(max_vals) == n_block:
+                max_vals = np.repeat(max_vals, self.config.dim_block)
+            assert len(max_vals) == data.shape[1], f"max_vals should have {data.shape[1]} features or {n_block} blocks, got {len(max_vals)}"
+    
+        if self.config.min_vals is None:
+            min_vals = np.zeros(data.shape[1])
+        elif np.isscalar(self.config.min_vals):
+            min_vals = np.full(data.shape[1], self.config.min_vals, dtype=np.float32)
+        else:
+            min_vals = self.config.min_vals
+            # If block-level values provided, expand to feature level
+            if len(min_vals) == n_block:
+                min_vals = np.repeat(min_vals, self.config.dim_block)
+            assert len(min_vals) == data.shape[1], f"min_vals should have {data.shape[1]} features or {n_block} blocks, got {len(min_vals)}"
+    
+        # Process distribution-related blocks
+        feature_start = 0
+        for (block_size, dist) in zip(self.config.dim_block, self.config.dist_block):
+            feature_end = feature_start + block_size
+    
+            if dist == 'Gaussian':
+                if self.config.mean_vals is None:
+                    mean_vals[feature_start:feature_end] = np.ma.mean(
+                        masked_data[:, feature_start:feature_end], axis=0).filled(0)
+    
+                if self.config.max_vals is None:
+                    max_vals[feature_start:feature_end] = np.max(np.maximum(
+                        mean_vals[feature_start:feature_end] + 3 * np.ma.std(masked_data[:, feature_start:feature_end], axis=0).filled(self.config.max_disp),
+                        np.ma.max(masked_data[:, feature_start:feature_end], axis=0)
+                    ))
+                if self.config.min_vals is None:
+                    min_vals[feature_start:feature_end] = np.min(np.minimum(
+                        mean_vals[feature_start:feature_end] - 3 * np.ma.std(masked_data[:, feature_start:feature_end], axis=0).filled(self.config.max_disp),
+                        np.ma.min(masked_data[:, feature_start:feature_end], axis=0)
+                    ))
+    
+            elif dist == 'Bernoulli':
+                if self.config.min_vals is None:
+                    min_vals[feature_start:feature_end] = 1e-5
+                if self.config.max_vals is None:
+                    max_vals[feature_start:feature_end] = 1.0 - 1e-5
             
-        else:
-            config.gamma = 0.
-            self.conditions = np.zeros((data.shape[0],1), dtype=np.int32)
-        self.conditions = tf.cast(self.conditions, tf.int32)
+            else:
+                # Ensure min_vals are nonnegative for (zero-inflated) Negative Binomial and Poisson blocks
+                min_vals[feature_start:feature_end] = np.maximum(min_vals[feature_start:feature_end], 0)
+    
+            feature_start += block_size
+    
+        # Convert to tensors
+        self.config.mean_vals = tf.convert_to_tensor(mean_vals, dtype=tf.keras.backend.floatx())
+        self.config.max_vals = tf.convert_to_tensor(max_vals, dtype=tf.keras.backend.floatx())
+        self.config.min_vals = tf.convert_to_tensor(min_vals, dtype=tf.keras.backend.floatx())
 
-        
-
-        # [num_cells, num_features]
-        self.masks = tf.convert_to_tensor(masks, dtype=tf.keras.backend.floatx())
-                
-        if self.masks.shape==self.data.shape:
-            self.id_dataset = self.masks
-            self.full_masks = True
-        else:
-            self.id_dataset = tf.convert_to_tensor(id_dataset, dtype=tf.int32)
-            self.full_masks = False
-
-        if config.max_vals is None:
-            segment_ids = np.repeat(np.arange(n_block), config.dim_block)
-            config.max_vals = np.zeros(segment_ids.max()+1)
-            np.maximum.at(config.max_vals, segment_ids, np.max(data,axis=0))
-            for i, dist in enumerate(config.dist_block):
-                if dist != 'NB':
-                    config.max_vals[i] = tf.constant(np.inf)
-        elif np.isscalar(config.max_vals):
-            config.max_vals = tf.constant(config.max_vals, shape=n_block, dtype=tf.keras.backend.floatx())
-        config.max_vals = tf.convert_to_tensor(config.max_vals, dtype=tf.keras.backend.floatx())
-        
-        self.batch_size_inference = 512
-        self.config = config
-        self.reset()
-        print(self.config, self.masks.shape, self.data.shape, self.batches.shape, flush = True)
-        
 
     def reset(self):
         train.clear_session()
@@ -200,7 +296,7 @@ class VAEIT():
         num_step_per_epoch : int, optional 
             The number of steps per epoch. If None, it will be inferred from the number of cells and batch size. Default is None.
         save_every_epoch : int, optional 
-            Frequency (in epochs) to save model checkpoints. Default is 25.
+            Frequency (in epochs) to save model checkpoints. Default is num_epoch.
         init_epoch : int, optional 
             The initial epoch number. Default is 1.
         early_stopping_patience : int, optional 
@@ -226,7 +322,9 @@ class VAEIT():
 
         if batch_size is None:
             batch_size = 256 if self.full_masks else 64
+        num_repeat = int(num_repeat)
         batch_size = np.minimum(batch_size, self.data.shape[0]*num_repeat)
+
         if batch_size_inference is None:
             batch_size_inference = batch_size
             
@@ -242,7 +340,7 @@ class VAEIT():
             
             self.dataset_train = tf.data.Dataset.from_tensor_slices((
                 self.data[id_train], self.batches[id_train], self.id_dataset[id_train], self.conditions[id_train]
-                )).repeat(num_repeat).shuffle(buffer_size = len(id_train), seed=0,
+                )).repeat(num_repeat).shuffle(buffer_size = len(id_train) * num_repeat, seed=0,
                            reshuffle_each_iteration=True).batch(batch_size, drop_remainder=True).prefetch(tf.data.experimental.AUTOTUNE)
 
             self.dataset_valid = tf.data.Dataset.from_tensor_slices((
@@ -252,14 +350,14 @@ class VAEIT():
             id_train = np.arange(self.data.shape[0])
             self.dataset_train = tf.data.Dataset.from_tensor_slices((
                 self.data, self.batches, self.id_dataset, self.conditions
-                )).repeat(num_repeat).shuffle(buffer_size = len(id_train), seed=0,
+                )).repeat(num_repeat).shuffle(buffer_size = len(id_train) * num_repeat, seed=0,
                            reshuffle_each_iteration=True).batch(batch_size, drop_remainder=True).prefetch(tf.data.experimental.AUTOTUNE)
             self.dataset_valid = None
             
         if num_step_per_epoch is None:
-            num_step_per_epoch = len(id_train)//batch_size
-            
-        if checkpoint_dir is not None:        
+            num_step_per_epoch = (len(id_train) * num_repeat) // batch_size
+
+        if checkpoint_dir is not None:
             if init_epoch==1 and delete_existing and tf.io.gfile.exists(checkpoint_dir):
                 print("Deleting old log directory at {}".format(checkpoint_dir))
                 tf.io.gfile.rmtree(checkpoint_dir)
@@ -274,7 +372,7 @@ class VAEIT():
             int(L),
             int(num_epoch),
             int(num_step_per_epoch),
-            int(save_every_epoch),
+            int(num_epoch) if save_every_epoch is None else int(save_every_epoch),
             init_epoch,
             early_stopping_patience,
             early_stopping_tolerance,
@@ -321,14 +419,14 @@ class VAEIT():
         z : np.array
             \([N,d]\) The latent means.
         ''' 
-        self.set_dataset(batch_size_inference)
+        self.set_dataset(int(batch_size_inference))
         return self.vae.get_z(self.dataset_full, self.full_masks, masks, zero_out)
 
 
     def get_denoised_data(self, masks=None, zero_out=True, batch_size_inference=256, return_mean=True, L=50):
-        self.set_dataset(batch_size_inference)        
+        self.set_dataset(int(batch_size_inference))
 
-        return self.vae.get_recon(self.dataset_full, self.full_masks, masks, zero_out, return_mean, L)
+        return self.vae.get_recon(self.dataset_full, self.full_masks, masks, zero_out, return_mean, int(L))
     
         
     def update_z(self, masks=None, zero_out=True, batch_size_inference=512, **kwargs):

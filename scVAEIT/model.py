@@ -45,10 +45,10 @@ class VariationalAutoEncoder(tf.keras.Model):
         self.embed_layer = Dense(np.sum(self.config.dim_block_embed), 
                                  activation = tf.nn.tanh, name = 'embed')
         self.encoder = Encoder(self.config.dimensions, self.config.dim_latent,
-            self.config.dim_block, self.config.dim_block_enc, self.config.dim_block_embed, self.config.block_names)
+            self.config.dim_block, self.config.dim_block_enc, self.config.dim_block_embed, self.config.mean_vals, self.config.block_names)
         self.decoder = Decoder(self.config.dimensions[::-1], self.config.dim_block,
             self.config.dist_block, self.config.dim_block_dec, self.config.dim_block_embed, 
-            self.config.max_vals, self.config.block_names)
+            self.config.mean_vals, self.config.min_vals, self.config.max_vals, self.config.max_disp, self.config.block_names)
         
         self.mask_generator = ModalMaskGenerator(
             config.dim_input_arr, config.p_feat, config.p_modal)
@@ -145,10 +145,9 @@ class VariationalAutoEncoder(tf.keras.Model):
         training : boolean, optional
             Whether in the training phase or not.
         '''
-        _masks = tf.where(bool_mask_in, 0., 1.)
-        _x = tf.where(bool_mask_in, x, 0.)
+        _masks = tf.where(bool_mask_in, 0., 1.)        
         embed = self.embed_layer(_masks, training=training)
-        z_mean, z_log_var, z, x_embed = self.encoder(_x, embed, batches, L=L, training=training)
+        z_mean, z_log_var, z, x_embed = self.encoder(x, bool_mask_in, embed, batches, L=L, training=training)
         if not self.config.skip_conn:
             x_embed = tf.zeros_like(x_embed)
         log_probs = tf.reduce_mean(
@@ -199,12 +198,12 @@ class VariationalAutoEncoder(tf.keras.Model):
                 m = tf.gather(masks, m)
             _m = tf.where(m==0., 0., 1.)
             embed = self.embed_layer(_m, training=False)
-            if zero_out:
-                x = tf.where(m==0, x, 0.)
-            _, _, z, x_embed = self.encoder(x, embed, b, L=L, training=False)
+            if not zero_out:
+                _m *= 0.
+            _, _, z, x_embed = self.encoder(x, _m==0, embed, b, L=L, training=False)
             if not self.config.skip_conn:
                 x_embed = tf.zeros_like(x_embed)
-            _x_hat = self.decoder(x, embed, tf.ones_like(m,dtype=tf.bool), 
+            _x_hat = self.decoder(x, embed, tf.ones_like(m, dtype=tf.bool), 
                     b, z, x_embed, training=False, return_prob=False)
             if return_mean:
                 _x_hat = tf.reduce_mean(_x_hat, axis=1)
@@ -243,10 +242,10 @@ class VariationalAutoEncoder(tf.keras.Model):
             if not full_masks:
                 m = tf.gather(masks, m)
             m = tf.where(m==0., 0., 1.)
-            if zero_out:
-                x = tf.where(m==0, x, 0.)
+            if not zero_out:
+                m *= 0.
             embed = self.embed_layer(m)
-            _z_mean, _, _, _ = self.encoder(x, embed, b, L=1, training=False)
+            _z_mean, _, _, _ = self.encoder(x, m==0, embed, b, L=1, training=False)
             z_mean.append(_z_mean.numpy())
             idx.append(_idx.numpy())
         idx = np.concatenate(idx)

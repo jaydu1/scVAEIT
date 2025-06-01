@@ -180,7 +180,7 @@ def train(dataset_train, dataset_valid, vae, checkpoint_dir,
         )
                 
         if checkpoint_dir is not None:
-            # When validation set is available, save the model winthin latest es_patience+1 epoches.        
+            # When validation set is available, save the model within latest es_patience+1 epochs.
             if dataset_valid is not None:
                 save_path = manager.save()
                 print("Saved checkpoint for epoch {}: {}".format(epoch, save_path), flush = True)
