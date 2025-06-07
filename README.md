@@ -9,7 +9,8 @@ This repository contains implementations of *scVAEIT* for integration and imputa
 *scVAEIT* has also been extended to impute single-cell proteomic data in [[Moon24]](#references), though it is also applicable to other types of data.
 *scVAEIT* is implemented in Python, and an R wrapper is also available.
 
-
+For `R` users, `reticulate` can be used to call `scVAEIT` from `R`.
+The documentation and tutorials using both `Python` and `R` are available at [scvaeit.readthedocs.io](https://scvaeit.readthedocs.io/en/latest/).
 
 Check out the example folder for illustrations of how to use *scVAEIT*:
 
