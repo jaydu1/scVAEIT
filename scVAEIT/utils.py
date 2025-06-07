@@ -68,7 +68,7 @@ class FixedGenerator(object):
     
     
 class ModalMaskGenerator(object):
-    def __init__(self, dim_arr, p_feat=0.05, p_modal=None):
+    def __init__(self, dim_arr, p_feat=0.05, p_modal=None, masks=None):
         self.p_feat = tf.constant(p_feat, dtype=tf.keras.backend.floatx())
         self.dim_arr = tf.constant(dim_arr)
         self.segment_ids = tf.constant(np.repeat(np.arange(len(dim_arr)), dim_arr), dtype=tf.int32)
@@ -76,6 +76,8 @@ class ModalMaskGenerator(object):
             p_modal = np.array(dim_arr, dtype=float)
             p_modal /= np.sum(p_modal)
         self.p_modal = tf.constant(p_modal, dtype=tf.keras.backend.floatx())
+        self.masks = masks
+        
 
     @tf.function(reduce_retracing=True)
     def __call__(self, inputs, missing_mask=None, p=None):
@@ -94,6 +96,7 @@ class ModalMaskGenerator(object):
             missing_mask = tf.zeros_like(inputs)
 
         if len(self.dim_arr)>1:
+            # Generate block mask
             mask_modal = tfp.distributions.Categorical(probs=self.p_modal, dtype=tf.int32).sample(sample_shape=(tf.shape(inputs)[0]))
             has_modal = tf.transpose(
                 tf.math.segment_sum(tf.transpose(missing_mask+1), self.segment_ids))
@@ -107,11 +110,19 @@ class ModalMaskGenerator(object):
                 mask = tf.where(tf.logical_and(
                     tf.expand_dims(condition,-1), tf.expand_dims(tf.equal(self.segment_ids, i),0)),
                     1., mask)
-            
-        mask = tf.where(missing_mask==-1., -1., mask)
+        else:
+            # Sample missing mask from observed masks
+            mask_shape_0 = tf.shape(self.masks)[0]
+            m_shape_0 = tf.shape(mask)[0]
+            random_indices = tf.random.uniform(shape=(m_shape_0,), minval=0, maxval=mask_shape_0, dtype=tf.int32)
+            selected_masks = tf.gather(self.masks, random_indices)
+            mask_condition = tf.logical_and(tf.equal(selected_masks, -1.), tf.not_equal(missing_mask, -1.))
+            mask = tf.where(mask_condition, 1., mask)
         
+        mask = tf.where(missing_mask==-1., -1., mask)
+
         return mask
-    
+
     
 class Early_Stopping():
     '''

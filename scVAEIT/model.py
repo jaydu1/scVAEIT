@@ -42,16 +42,14 @@ class VariationalAutoEncoder(tf.keras.Model):
         super(VariationalAutoEncoder, self).__init__(name = name, **kwargs)
         self.config = config
         self.masks = masks
-        self.embed_layer = Dense(np.sum(self.config.dim_block_embed), 
-                                 activation = tf.nn.tanh, name = 'embed')
+        self.embed_layer = Dense(np.sum(self.config.dim_block_embed), activation = tf.nn.tanh, name = 'embed')
         self.encoder = Encoder(self.config.dimensions, self.config.dim_latent,
             self.config.dim_block, self.config.dim_block_enc, self.config.dim_block_embed, self.config.mean_vals, self.config.block_names)
         self.decoder = Decoder(self.config.dimensions[::-1], self.config.dim_block,
             self.config.dist_block, self.config.dim_block_dec, self.config.dim_block_embed, 
             self.config.mean_vals, self.config.min_vals, self.config.max_vals, self.config.max_disp, self.config.block_names)
         
-        self.mask_generator = ModalMaskGenerator(
-            config.dim_input_arr, config.p_feat, config.p_modal)
+        self.mask_generator = ModalMaskGenerator(config.dim_input_arr, config.p_feat, config.p_modal, masks)
         
         
     def generate_mask(self, inputs, mask=None, p=None):
@@ -89,11 +87,12 @@ class VariationalAutoEncoder(tf.keras.Model):
         losses : float
             the loss.
         '''
-                            
+
         z_mean_obs, z_log_var_obs, log_probs_obs = self._get_reconstruction_loss(
             x, masks!=-1., masks!=-1., batches, L, training=training)
         z_mean_unobs_1, z_log_var_unobs_1, log_probs_unobs = self._get_reconstruction_loss(
             x, masks==0., masks==1., batches, L, training=training)
+        
         if self.config.beta_reverse>0:
             z_mean_unobs_2, z_log_var_unobs_2, log_probs_ = self._get_reconstruction_loss(
                 x, masks==1., masks==0., batches, L, training=training)            
@@ -117,7 +116,6 @@ class VariationalAutoEncoder(tf.keras.Model):
                 self.config.beta_reverse * self._get_kl_normal(
             z_mean_unobs_2, z_log_var_unobs_2, z_mean_obs, z_log_var_obs)
         self.add_loss(self.config.beta_kl * kl)
-
         
         if gamma == 0.:
             mmd_loss = tf.constant(0.0, dtype=tf.keras.backend.floatx())
@@ -145,9 +143,10 @@ class VariationalAutoEncoder(tf.keras.Model):
         training : boolean, optional
             Whether in the training phase or not.
         '''
-        _masks = tf.where(bool_mask_in, 0., 1.)        
+        _masks = tf.where(bool_mask_in, 0., 1.)
+        _x = tf.multiply(x, 1.-_masks)
         embed = self.embed_layer(_masks, training=training)
-        z_mean, z_log_var, z, x_embed = self.encoder(x, bool_mask_in, embed, batches, L=L, training=training)
+        z_mean, z_log_var, z, x_embed = self.encoder(_x, bool_mask_in, embed, batches, L=L, training=training)
         if not self.config.skip_conn:
             x_embed = tf.zeros_like(x_embed)
         log_probs = tf.reduce_mean(
@@ -164,15 +163,17 @@ class VariationalAutoEncoder(tf.keras.Model):
         return tf.reduce_mean(tf.reduce_sum(kl, axis=-1))
     
     
-    def get_recon(self, dataset_test, full_masks, masks=None, zero_out=True, 
-                  return_mean=True, L=50):
+    def get_recon(self, dataset_test, n_obs, full_masks, masks=None, zero_out=True, 
+                  return_mean=True, L=50, training=True):
         '''
         Compute the reconstruction of the input data.
 
         Parameters
         ----------
         dataset_test : tf.Dataset
-            Dataset containing (x, batches).
+            Dataset containing (x, batches, masks, idx).
+        n_obs : int
+            The number of observations.
         full_masks : boolean
             Whether to use full masks.
         masks : np.array, optional
@@ -183,74 +184,95 @@ class VariationalAutoEncoder(tf.keras.Model):
             Whether to return the mean of posterior samples.
         L : int, optional
             The number of MC samples.
+        training : boolean, optional
+            Whether to use the model in training mode when batch normalization is performed
+            based on batch mean and variance; otherwise moving average mean and variance are used. 
+            When using small datasets or small a number of epochs for training, it is recommended 
+            to set this to True. Default is True.
 
         Returns
         ----------
         x_hat : np.array
             The reconstruction.
         '''
-        if masks is None:
-            masks = self.masks
-        x_hat = []
-        idx = []
-        for x,b,m,_idx in dataset_test:
+        if masks is None: masks = self.masks
+
+        # Pre-allocate arrays for final results
+        x_hat = np.zeros((n_obs, self.config.dim_input_arr.sum()))
+        counts = np.zeros((n_obs, 1))
+        
+        for x, b, m, _idx in dataset_test:
             if not full_masks:
                 m = tf.gather(masks, m)
             _m = tf.where(m==0., 0., 1.)
-            embed = self.embed_layer(_m, training=False)
-            if not zero_out:
-                _m *= 0.
-            _, _, z, x_embed = self.encoder(x, _m==0, embed, b, L=L, training=False)
-            if not self.config.skip_conn:
-                x_embed = tf.zeros_like(x_embed)
+            embed = self.embed_layer(_m, training=training)
+            if not zero_out: _m *= 0.
+            _, _, z, x_embed = self.encoder(x, _m==0, embed, b, L=L, training=training)
+            if not self.config.skip_conn: x_embed = tf.zeros_like(x_embed)
             _x_hat = self.decoder(x, embed, tf.ones_like(m, dtype=tf.bool), 
-                    b, z, x_embed, training=False, return_prob=False)
-            if return_mean:
-                _x_hat = tf.reduce_mean(_x_hat, axis=1)
-            x_hat.append(_x_hat.numpy())
-            idx.append(_idx.numpy())
-        idx = np.concatenate(idx)
-        x_hat = np.concatenate(x_hat)[np.argsort(idx)]     
-
+            b, z, x_embed, training=training, return_prob=False)
+            if return_mean: _x_hat = tf.reduce_mean(_x_hat, axis=1)
+            
+            # Aggregate using vector indexing
+            _x_hat_np = _x_hat.numpy()
+            _idx_np = _idx.numpy()
+            np.add.at(x_hat, _idx_np, _x_hat_np)
+            np.add.at(counts, _idx_np, 1)
+        
+        # Average the accumulated values
+        x_hat = x_hat / np.maximum(counts, 1)
+        
         return x_hat
     
     
-    def get_z(self, dataset_test, full_masks=False, masks=None, zero_out=True):
+    def get_z(self, dataset_test, n_obs, full_masks=False, masks=None, zero_out=True, training=True):
         '''Compute latent variables.
 
         Parameters
         ----------
         dataset_test : tf.Dataset
-            Dataset containing (x, batches).
+            Dataset containing (x, batches, masks, idx).
+        n_obs : int
+            The number of observations.
         full_masks : boolean
             Whether to use full masks.
         masks : np.array, optional
             The mask of input data: -1,0,1 indicate missing, observed, and masked.
         zero_out : boolean, optional
             Whether to zero out the missing values.
+        training : boolean, optional
+            Whether to use the model in training mode when batch normalization is performed
+            based on batch mean and variance; otherwise moving average mean and variance are used. 
+            When using small datasets or small a number of epochs for training, it is recommended 
+            to set this to True. Default is True.
 
         Returns
         ----------
         z_mean : np.array
             The latent mean.
         '''
-        if masks is None:
-            masks = self.masks
-        z_mean = []
-        idx = []
-        for x,b,m,_idx in dataset_test:
-            if not full_masks:
-                m = tf.gather(masks, m)
-            m = tf.where(m==0., 0., 1.)
-            if not zero_out:
-                m *= 0.
-            embed = self.embed_layer(m)
-            _z_mean, _, _, _ = self.encoder(x, m==0, embed, b, L=1, training=False)
-            z_mean.append(_z_mean.numpy())
-            idx.append(_idx.numpy())
-        idx = np.concatenate(idx)
-        z_mean = np.concatenate(z_mean)[np.argsort(idx)]
+        if masks is None: masks = self.masks
 
+        # Pre-allocate arrays for final results
+        z_mean = np.zeros((n_obs, self.config.dim_latent))
+        counts = np.zeros((n_obs, 1))
+        
+        for x, b, m, _idx in dataset_test:
+            if not full_masks: m = tf.gather(masks, m)
+            m = tf.where(m==0., 0., 1.)
+            if not zero_out: m *= 0.
+            embed = self.embed_layer(m, training=training)
+            _z_mean, _, _, _ = self.encoder(x, m==0, embed, b, L=1, training=training)
+            
+            # Aggregate directly into pre-allocated array
+            _z_mean_np = _z_mean.numpy()
+            _idx_np = _idx.numpy()
+            np.add.at(z_mean, _idx_np, _z_mean_np)
+            np.add.at(counts, _idx_np, 1)
+        
+        # Average the accumulated values
+        z_mean = z_mean / np.maximum(counts, 1)
+        
         return z_mean
 
 

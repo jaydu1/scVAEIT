@@ -1,3 +1,4 @@
+import os
 import warnings
 from typing import Optional, Union
 from types import SimpleNamespace
@@ -76,7 +77,7 @@ class VAEIT():
         self.masks, self.id_dataset, self.full_masks = self._process_masks(masks, id_dataset)
         
         # Compute Gaussian statistics
-        self._compute_stats(data, masks, n_block)
+        self._compute_stats(data, n_block)
 
         self.batch_size_inference = 512
         self.reset()
@@ -92,9 +93,11 @@ class VAEIT():
         # Default configuration
         defaults = {
             'beta_kl': 2.,
+            'beta_unobs': 0.5,
             'beta_reverse': 0.,
             'beta_modal': np.ones(n_modal, dtype=np.float32),
             'p_modal': None,
+            'p_feat': 0.2,
             'uni_block_names': np.char.add(np.repeat('M-', n_modal), np.arange(n_modal).astype(str)),
             'block_names': np.char.add(np.repeat('M-', n_block), np.arange(n_block).astype(str)),
             'dist_block': np.repeat('Gaussian', n_block),
@@ -133,7 +136,9 @@ class VAEIT():
         batches = np.array([], dtype=np.float32).reshape((self.data.shape[0], 0))
 
         if batches_cate is not None:
-            self.cat_enc = OneHotEncoder(drop='first').fit(batches_cate)
+            # self.cat_enc = OneHotEncoder(drop='first').fit(batches_cate)
+            # This affects a lot!!!
+            self.cat_enc = OneHotEncoder().fit(batches_cate)
             batches = self.cat_enc.transform(batches_cate).toarray()
         
         if batches_cont is not None:
@@ -183,8 +188,12 @@ class VAEIT():
             return masks_tensor, id_tensor, False
         
 
-    def _compute_stats(self, data, masks, n_block):
+    def _compute_stats(self, data, n_block):
         """Compute mean, min, and max values for Gaussian blocks."""
+        if not self.full_masks:
+            masks = tf.gather(self.masks, self.id_dataset, axis=0).numpy()
+        else:
+            masks = self.masks.numpy()
         masked_data = np.ma.array(data, mask=(masks == -1))
         
         if self.config.mean_vals is None:
@@ -195,7 +204,7 @@ class VAEIT():
     
         # Initialize max_vals and min_vals at feature level
         if self.config.max_vals is None:
-            max_vals = np.zeros(data.shape[1])
+            max_vals = np.max(data, axis=0)
         elif np.isscalar(self.config.max_vals):
             max_vals = np.full(data.shape[1], self.config.max_vals, dtype=np.float32)
         else:
@@ -242,7 +251,9 @@ class VAEIT():
                     min_vals[feature_start:feature_end] = 1e-5
                 if self.config.max_vals is None:
                     max_vals[feature_start:feature_end] = 1.0 - 1e-5
-            
+            elif dist == 'NB' or dist == 'Poisson':
+                if self.config.max_vals is None:
+                    max_vals[feature_start:feature_end] = np.max(max_vals[feature_start:feature_end])
             else:
                 # Ensure min_vals are nonnegative for (zero-inflated) Negative Binomial and Poisson blocks
                 min_vals[feature_start:feature_end] = np.maximum(min_vals[feature_start:feature_end], 0)
@@ -260,6 +271,7 @@ class VAEIT():
         if hasattr(self, 'vae'):
             del self.vae
             import gc
+
             gc.collect()
         self.vae = model.VariationalAutoEncoder(self.config, self.masks)
         
@@ -328,30 +340,36 @@ class VAEIT():
         if batch_size_inference is None:
             batch_size_inference = batch_size
             
+        def make_tf_dataset(index, batch_size, repeat=1, shuffle=False, drop_remainder=False):
+            id_tensor = tf.convert_to_tensor(index, dtype=tf.int32)
+            ds = tf.data.Dataset.from_tensor_slices((
+                tf.gather(self.data, id_tensor),
+                tf.gather(self.batches, id_tensor),
+                tf.gather(self.id_dataset, id_tensor),
+                tf.gather(self.conditions, id_tensor)
+            ))
+            if shuffle:
+                ds = ds.shuffle(buffer_size=len(index), seed=0, reshuffle_each_iteration=True)
+            if repeat > 1: ds = ds.repeat(repeat)
+            ds = ds.batch(batch_size, drop_remainder=drop_remainder).prefetch(tf.data.experimental.AUTOTUNE)
+            return ds
+
         if valid:
             if stratify is False:
                 stratify = None    
 
             id_train, id_valid = train_test_split(
-                                    np.arange(self.data.shape[0]),
-                                    test_size=test_size,
-                                    stratify=stratify,
-                                    random_state=random_state)
+                np.arange(self.data.shape[0]),
+                test_size=test_size,
+                stratify=stratify,
+                random_state=random_state
+            )
             
-            self.dataset_train = tf.data.Dataset.from_tensor_slices((
-                self.data[id_train], self.batches[id_train], self.id_dataset[id_train], self.conditions[id_train]
-                )).repeat(num_repeat).shuffle(buffer_size = len(id_train) * num_repeat, seed=0,
-                           reshuffle_each_iteration=True).batch(batch_size, drop_remainder=True).prefetch(tf.data.experimental.AUTOTUNE)
-
-            self.dataset_valid = tf.data.Dataset.from_tensor_slices((
-                    self.data[id_valid], self.batches[id_valid], self.id_dataset[id_valid], self.conditions[id_valid]
-                )).batch(batch_size_inference).prefetch(tf.data.experimental.AUTOTUNE)
+            self.dataset_train = make_tf_dataset(id_train, batch_size, repeat=num_repeat, shuffle=True, drop_remainder=True)
+            self.dataset_valid = make_tf_dataset(id_valid, batch_size_inference, repeat=1, shuffle=False)
         else:
             id_train = np.arange(self.data.shape[0])
-            self.dataset_train = tf.data.Dataset.from_tensor_slices((
-                self.data, self.batches, self.id_dataset, self.conditions
-                )).repeat(num_repeat).shuffle(buffer_size = len(id_train) * num_repeat, seed=0,
-                           reshuffle_each_iteration=True).batch(batch_size, drop_remainder=True).prefetch(tf.data.experimental.AUTOTUNE)
+            self.dataset_train = make_tf_dataset(id_train, batch_size, repeat=num_repeat, shuffle=True, drop_remainder=True)
             self.dataset_valid = None
             
         if num_step_per_epoch is None:
@@ -384,22 +402,53 @@ class VAEIT():
         return hist
         
             
-    def save_model(self, path_to_weights):
+    def save_model(self, path_to_model):
+        """
+        Save the model weights to the specified path.
+
+        Parameters
+        ----------
+        path_to_model : str
+            Path to the directory where the model weights will be saved.
+        """
+
         checkpoint = tf.train.Checkpoint(net=self.vae)
         manager = tf.train.CheckpointManager(
-            checkpoint, path_to_weights, max_to_keep=None
+            checkpoint, path_to_model, max_to_keep=None
         )
-        save_path = manager.save()        
-        print("Saved checkpoint: {}".format(save_path), flush = True)
+        save_path = manager.save()
+        print("Saved checkpoint: {}".format(save_path), flush=True)
+
+
+    def load_model(self, path_to_model):
+        """
+        Load the model weights from the specified path.
         
-
-    def load_model(self, path_to_weights):
+        Parameters
+        ----------
+        path_to_model : str
+            Path to the directory or specific checkpoint file containing the model weights.
+            If a directory is provided, the latest checkpoint will be loaded.
+        """
         checkpoint = tf.train.Checkpoint(net=self.vae)
-        status = checkpoint.restore(path_to_weights)
-        print("Loaded checkpoint: {}".format(status), flush = True)
+
+        if os.path.isdir(path_to_model):
+            # Load latest checkpoint from directory
+            ckpt_path = tf.train.latest_checkpoint(path_to_model)
+            if ckpt_path is None:
+                raise FileNotFoundError(f"No checkpoint found in directory: {path_to_model}")
+        else:
+            # Assume path_to_model is a checkpoint file
+            ckpt_path = path_to_model
+
+        checkpoint.restore(ckpt_path)
+        print(f"Loaded checkpoint: {ckpt_path}", flush=True)
 
 
-    def set_dataset(self, batch_size_inference=512):
+    def set_dataset(self, num_repeat=5, batch_size_inference=512):
+        batch_size_inference = int(batch_size_inference)
+        num_repeat = 1 if self.data.shape[0] <= batch_size_inference else num_repeat
+            
         if not hasattr(self, 'dataset_full') or batch_size_inference != self.batch_size_inference:
             id_samples = np.arange(self.data.shape[0])
             self.dataset_full = tf.data.Dataset.from_tensor_slices((
@@ -407,29 +456,92 @@ class VAEIT():
                 )).shuffle(
                     buffer_size = len(id_samples), seed=0,
                     reshuffle_each_iteration=True
-                ).batch(batch_size_inference).prefetch(tf.data.experimental.AUTOTUNE)
+                ).repeat(num_repeat).batch(batch_size_inference).prefetch(tf.data.experimental.AUTOTUNE)
             self.batch_size_inference = batch_size_inference
 
             
-    def get_latent_z(self, masks=None, zero_out=True, batch_size_inference=512):
-        ''' get the posterier mean of current latent space z (encoder output)
+    def get_latent_z(self, masks=None, zero_out=True, num_repeat=5, batch_size_inference=512, training=True):
+        ''' Get the posterior mean of latent space z.
 
+        Parameters
+        ----------
+        masks : np.array, optional
+            Masks indicating missingness, where 1 represents missing and 0 represents observed.
+            If None, the full masks will be used. Default is None.
+        zero_out : bool, optional
+            Whether to zero out the missing values in the output. Default is True.
+        num_repeat : int, optional
+            The number of times to repeat the dataset to remove effects of batch shuffling for inference.
+            Default is 5; if sample size is smaller than batch_size_inference, it is set to 1.
+        batch_size_inference : int, optional
+            The batch size for inference. Default is 512.
+        training : bool, optional
+            Whether to use the model in training mode when batch normalization is performed
+            based on batch mean and variance; otherwise moving average mean and variance are used. 
+            When using small datasets or small a number of epochs for training, it is recommended 
+            to set this to True. Default is True.
+        
         Returns
         ----------
         z : np.array
             \([N,d]\) The latent means.
         ''' 
-        self.set_dataset(int(batch_size_inference))
-        return self.vae.get_z(self.dataset_full, self.full_masks, masks, zero_out)
+        self.set_dataset(num_repeat, batch_size_inference)
+        return self.vae.get_z(self.dataset_full, self.data.shape[0], self.full_masks, masks, zero_out, training)
 
 
-    def get_denoised_data(self, masks=None, zero_out=True, batch_size_inference=256, return_mean=True, L=50):
-        self.set_dataset(int(batch_size_inference))
+    def get_denoised_data(
+            self, masks=None, zero_out=True, return_mean=True, 
+            num_repeat=5, L=50, batch_size_inference=256, training=True):
+        ''' Get the denoised data (decoder output) from the current latent space z
 
-        return self.vae.get_recon(self.dataset_full, self.full_masks, masks, zero_out, return_mean, int(L))
+        Parameters
+        ----------
+        masks : np.array, optional
+            Masks indicating missingness, where 1 represents missing and 0 represents observed.
+            If None, the full masks will be used. Default is None.
+        zero_out : bool, optional
+            Whether to zero out the missing values in the output. Default is True.
+        return_mean : bool, optional
+            Whether to return the mean of the denoised data. Default is True.
+        num_repeat : int, optional
+            The number of times to repeat the dataset to remove effects of batch shuffling for inference. 
+            Default is 5; if sample size is smaller than batch_size_inference, it is set to 1.
+        L : int, optional
+            The number of Monte Carlo samples for denoising. Default is 50.
+        batch_size_inference : int, optional
+            The batch size for inference. Default is 512.
+        training : bool, optional
+            Whether to use the model in training mode when batch normalization is performed
+            based on batch mean and variance; otherwise moving average mean and variance are used. 
+            When using small datasets or small a number of epochs for training, it is recommended 
+            to set this to True. Default is True.
+        
+        Returns
+        -------
+        denoised_data : np.array
+            The denoised data with shape \([N, d]\) where \(N\) is the number of cells and \(d\) is the number of features.
+        '''
+        self.set_dataset(num_repeat, batch_size_inference)
+        return self.vae.get_recon(self.dataset_full, self.data.shape[0], self.full_masks, masks, zero_out, return_mean, int(L), training)
     
         
     def update_z(self, masks=None, zero_out=True, batch_size_inference=512, **kwargs):
+        '''
+        Update the latent representation z based on the current input data and masks.
+
+        Parameters
+        ----------
+        masks : np.array, optional
+            Masks indicating missingness, where 1 represents missing and 0 represents observed.
+            If None, the full masks will be used. Default is None.
+        zero_out : bool, optional
+            Whether to zero out the missing values in the output. Default is True.
+        batch_size_inference : int, optional
+            The batch size for inference. Default is 512.
+        **kwargs :
+            Additional keyword arguments to be passed to the scanpy neighbors function.
+        '''
         self.z = self.get_latent_z(masks, zero_out, batch_size_inference)
         self.adata = sc.AnnData(self.z)
         sc.pp.neighbors(self.adata, **kwargs)
@@ -438,7 +550,7 @@ class VAEIT():
     def visualize_latent(self, method: str = "UMAP", 
                          color = None, **kwargs):
         '''
-        visualize the current latent space z using the scanpy visualization tools
+        Visualize the current latent space z using the scanpy visualization tools
 
         Parameters
         ----------
@@ -453,8 +565,8 @@ class VAEIT():
 
         Returns
         -------
-        None.
-
+        axes : matplotlib.axes.Axes
+            Axes object containing the visualization.
         '''
           
         if method not in ['PCA', 'UMAP', 'TSNE', 'diffmap', 'draw_graph']:

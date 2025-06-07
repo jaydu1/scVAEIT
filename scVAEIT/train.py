@@ -153,9 +153,9 @@ def train(dataset_train, dataset_valid, vae, checkpoint_dir,
             if not full_masks:
                 m = tf.gather(vae.masks, m)
             m = vae.generate_mask(x, m)
+
             with tf.GradientTape() as tape:
                 losses = vae(x, m, b, c, gamma=gamma, L=L)
-                # Compute reconstruction loss
                 loss = tf.reduce_sum(losses)
             grads = tape.gradient(loss, vae.trainable_weights,
                         unconnected_gradients=tf.UnconnectedGradients.ZERO)
@@ -196,6 +196,7 @@ def train(dataset_train, dataset_valid, vae, checkpoint_dir,
 
                     if eval_func is not None:
                         eval_func(vae)
+                        
             checkpoint.step.assign_add(1)
         
         loss_monitor.reset_state()
