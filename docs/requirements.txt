@@ -18,3 +18,4 @@ scipy
 seaborn
 statsmodels>=0.14
 tqdm
+scVAEIT
