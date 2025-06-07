@@ -23,7 +23,7 @@ build-backend = "setuptools.build_meta"
 include-package-data = true
 
 [tool.setuptools.packages.find]
-exclude = ["example*", "Reproducibility*"]
+exclude = ["docs*", "Reproducibility*"]
 
 [tool.setuptools.dynamic]
 version = {attr = "scVAEIT.__version__"}
