@@ -2,7 +2,7 @@ __all__ = ['VAEIT', 'reset_random_seeds']
 
 from scVAEIT.VAEIT import VAEIT
 from scVAEIT.utils import reset_random_seeds
-from causarray.__about__ import __version__
+from scVAEIT.__about__ import __version__
 
 __author__ = "Jin-Hong Du"
 __copyright__ = "Copyright 2024, The Cross-Modalilty Transfer Learning Project"
