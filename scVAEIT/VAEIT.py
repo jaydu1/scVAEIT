@@ -322,7 +322,7 @@ class VAEIT():
         checkpoint_dir : str, optional 
             Directory to save model checkpoints. Default is None.
         delete_existing : bool, optional 
-            Whether to delete existing checkpoints in the directory. Default is True.
+            Whether to delete existing checkpoints in the directory; only used if `init_epoch=1`. Default is True.
         eval_func : function, optional
             A function to evaluate the model, which takes the VAE as an input. Default is None.
 
