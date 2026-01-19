@@ -16,11 +16,11 @@ Check out the example folder for illustrations of how to use *scVAEIT*:
 
 Example | Language | Notebooks
 ---|---|---
-Imputation of ADT | ![Python Badge](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=fff&style=flat-square) | [`imputation_1modality.ipynb`](https://github.com/jaydu1/scVAEIT/blob/main/docs/tutorial/python/imputation_1modality.ipynb)
-Imputation of RNA and ADT | ![Python Badge](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=fff&style=flat-square) | [`imputation_2modalities.ipynb`](https://github.com/jaydu1/scVAEIT/blob/main/docs/tutorial/python/imputation_2modalities.ipynb)
-Integration of RNA, ADT, and peaks | ![Python Badge](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=fff&style=flat-square) | [`integration_3modalities.ipynb`](https://github.com/jaydu1/scVAEIT/blob/main/docs/tutorial/python/integration_3modalities.ipynb)
-Imputation of RNA | ![R Badge](https://img.shields.io/badge/R-276DC3?logo=r&logoColor=fff&style=flat-square) | [`imputation_scRNAseq.ipynb`](https://github.com/jaydu1/scVAEIT/blob/main/docs/tutorial/R/imputation_scRNAseq.ipynb)
-Imputation of peptides | ![R Badge](https://img.shields.io/badge/R-276DC3?logo=r&logoColor=fff&style=flat-square) | [`imputation_peptide.ipynb`](https://github.com/jaydu1/scVAEIT/blob/main/docs/tutorial/R/imputation_peptide.ipynb)
+Imputation of ADT | ![Python Badge](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=fff&style=flat-square) | [`imputation_1modality.ipynb`](https://github.com/jaydu1/scVAEIT/blob/main/docs/source/tutorial/python/imputation_1modality.ipynb)
+Imputation of RNA and ADT | ![Python Badge](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=fff&style=flat-square) | [`imputation_2modalities.ipynb`](https://github.com/jaydu1/scVAEIT/blob/main/docs/source/tutorial/python/imputation_2modalities.ipynb)
+Integration of RNA, ADT, and peaks | ![Python Badge](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=fff&style=flat-square) | [`integration_3modalities.ipynb`](https://github.com/jaydu1/scVAEIT/blob/main/docs/source/tutorial/python/integration_3modalities.ipynb)
+Imputation of RNA | ![R Badge](https://img.shields.io/badge/R-276DC3?logo=r&logoColor=fff&style=flat-square) | [`imputation_scRNAseq.ipynb`](https://github.com/jaydu1/scVAEIT/blob/main/docs/source/tutorial/R/imputation_scRNAseq.ipynb)
+Imputation of peptides | ![R Badge](https://img.shields.io/badge/R-276DC3?logo=r&logoColor=fff&style=flat-square) | [`imputation_peptide.ipynb`](https://github.com/jaydu1/scVAEIT/blob/main/docs/source/tutorial/R/imputation_peptide.ipynb)
 
 
 
@@ -28,7 +28,7 @@ For preparing your own data to run scVAEIT, please read about:
 
 Example | Language | Notebooks
 ---|---|---
-Prepare input data | ![Python Badge](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=fff&style=flat-square) | [`prepare_data_input.ipynb`](https://github.com/jaydu1/scVAEIT/blob/main/docs/tutorial/python/prepare_data_input.ipynb)
+Prepare input data | ![Python Badge](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=fff&style=flat-square) | [`prepare_data_input.ipynb`](https://github.com/jaydu1/scVAEIT/blob/main/docs/source/tutorial/python/prepare_data_input.ipynb)
 
 
 ## Reproducibility Materials
